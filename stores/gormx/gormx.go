@@ -2,12 +2,12 @@ package gormx
 
 import (
 	"fmt"
+	"github.com/og-game/glib/stores/gormx/config"
+	"github.com/og-game/glib/stores/gormx/database"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"new/glib-new/stores/gormx/config"
-	"new/glib-new/stores/gormx/database"
 	"sync"
 )
 

@@ -2,7 +2,8 @@ package redisx
 
 import (
 	"context"
-	"new/glib-new/stores/redisx/config"
+	"github.com/og-game/glib/stores/redisx/config"
+	"github.com/redis/go-redis/v9"
 )
 
 var Engine redis.UniversalClient

@@ -2,6 +2,7 @@ package redisx
 
 import (
 	"context"
+	"github.com/redis/go-redis/v9"
 	"github.com/zeromicro/go-zero/core/logc"
 	"net"
 )

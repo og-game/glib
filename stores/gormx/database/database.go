@@ -2,9 +2,9 @@ package database
 
 import (
 	"fmt"
+	"github.com/og-game/glib/stores/gormx/config"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
-	"new/glib-new/stores/gormx/config"
 	"time"
 )
 
