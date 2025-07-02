@@ -14,15 +14,19 @@ func (dao *BaseDAO) TX() *gorm.DB {
 	if dao.engine == nil { // default mysql engine
 		dao.engine = Engine.Mysql
 	}
-	if dao.ctx == nil {
-		dao.ctx = context.Background()
-	}
-	return dao.engine.WithContext(dao.ctx)
+	return dao.engine.WithContext(dao.Context())
 }
 
 func (dao *BaseDAO) WithContext(ctx context.Context) *BaseDAO {
 	dao.ctx = ctx
 	return dao
+}
+
+func (dao *BaseDAO) Context() context.Context {
+	if dao.ctx == nil {
+		dao.ctx = context.Background()
+	}
+	return dao.ctx
 }
 
 func (dao *BaseDAO) WithEngine(engine *gorm.DB) *BaseDAO {
