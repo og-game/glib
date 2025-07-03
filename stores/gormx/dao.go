@@ -22,6 +22,13 @@ func (dao *BaseDAO) WithContext(ctx context.Context) *BaseDAO {
 	return dao
 }
 
+func (dao *BaseDAO) GetContext() context.Context {
+	if dao.ctx == nil {
+		dao.ctx = context.Background()
+	}
+	return dao.ctx
+}
+
 func (dao *BaseDAO) Context() context.Context {
 	if dao.ctx == nil {
 		dao.ctx = context.Background()
