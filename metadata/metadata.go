@@ -11,6 +11,7 @@ const (
 	CtxUserID       = "x-user-id"
 	CtxCurrencyCode = "x-currency-code"
 	CtxLanguage     = "x-language"
+	CtxUserInfo     = "x-user-info"
 )
 
 // WithMetadata 上下文数据
