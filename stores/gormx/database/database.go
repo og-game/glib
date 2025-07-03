@@ -15,19 +15,12 @@ func NewEngine(c config.Config, dialector gorm.Dialector, opt ...gorm.Option) (*
 		NamingStrategy: schema.NamingStrategy{
 			SingularTable: true,
 		},
+		Logger: NewGormLogger(c),
 	}
 
 	engine, err := gorm.Open(dialector, append(opt, cfg)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %v", err)
-	}
-
-	if c.Debug {
-		engine = engine.Debug()
-	}
-
-	if c.Trace {
-		registerTraceHook(engine)
 	}
 
 	// 设置连接池参数

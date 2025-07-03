@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/dtm-labs/rockscache v0.1.1
 	github.com/go-redsync/redsync/v4 v4.13.0
+	github.com/go-resty/resty/v2 v2.16.5
 	github.com/jinzhu/copier v0.4.0
 	github.com/redis/go-redis/v9 v9.11.0
 	github.com/zeromicro/go-zero v1.8.4
@@ -18,7 +19,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/ClickHouse/ch-go v0.66.1 // indirect
-	github.com/ClickHouse/clickhouse-go/v2 v2.30.3 // indirect
+	github.com/ClickHouse/clickhouse-go/v2 v2.37.2 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
@@ -32,7 +33,7 @@ require (
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
@@ -52,7 +53,9 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/sony/sonyflake v1.2.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/spf13/cast v1.9.2 // indirect
 	go.etcd.io/etcd/api/v3 v3.6.1 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.6.1 // indirect
 	go.etcd.io/etcd/client/v3 v3.6.1 // indirect
