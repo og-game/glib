@@ -62,8 +62,8 @@ func WithMerchantIDRpcMetadata(ctx context.Context, merchantID int64, currencyCo
 	return metadata.NewOutgoingContext(ctx, md)
 }
 
-// GetMerchantIDFromRpcMetadata 从gRPC metadata获取商户ID
-func GetMerchantIDFromRpcMetadata(ctx context.Context) (int64, string) {
+// GetMerchantIDCurrencyCodeFromRpcMetadata 从gRPC metadata获取商户ID和币种
+func GetMerchantIDCurrencyCodeFromRpcMetadata(ctx context.Context) (int64, string) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return 0, ""
