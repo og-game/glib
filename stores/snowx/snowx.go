@@ -13,7 +13,10 @@ import (
 var flake *sonyflake.Sonyflake
 
 func init() {
-	startTime, _ := time.Parse("2006-01-02 15:04:05", "2025-07-01 00:00:00")
+	startTime, err := time.Parse("2006-01-02 15:04:05", "2025-07-01 00:00:00")
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse start time: %v", err))
+	}
 	flake = sonyflake.NewSonyflake(sonyflake.Settings{
 		StartTime: startTime,
 		MachineID: getMachineID,
@@ -35,7 +38,8 @@ func getMachineID() (uint16, error) {
 		if err != nil {
 			return 0, fmt.Errorf("failed to get container ID: %v", err)
 		}
-		return uint16(sum([]byte(containerID)) % 1024), nil
+		id := uint16(sum([]byte(containerID)) % 1024)
+		return id, nil
 	}
 
 	// 如果不在 Docker 环境中，继续使用 MAC 地址方式
