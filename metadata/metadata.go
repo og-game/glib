@@ -15,6 +15,7 @@ const (
 	CtxCurrencyCode = "x-currency-code"
 	CtxLanguage     = "x-language"
 	CtxUserInfo     = "x-user-info"
+	SkipTenantKey   = "x-skip-tenant" // 跳过租户条件的标记
 )
 
 // WithMetadata 上下文数据
@@ -90,4 +91,17 @@ func GetMerchantIDCurrencyCodeFromRpcMetadata(ctx context.Context) (int64, strin
 	}
 
 	return merchantID, currencyCode
+}
+
+// WithSkipTenant 跳过租户条件
+func WithSkipTenant(ctx context.Context) context.Context {
+	return context.WithValue(ctx, SkipTenantKey, true)
+}
+
+// ShouldSkipTenant 检查是否跳过租户条件
+func ShouldSkipTenant(ctx context.Context) bool {
+	if skip, ok := ctx.Value(SkipTenantKey).(bool); ok {
+		return skip
+	}
+	return false
 }
