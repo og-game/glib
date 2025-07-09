@@ -44,8 +44,8 @@ func GetTraceIDFromCtx(ctx context.Context) string {
 	return ""
 }
 
-// WithMerchantIDRpcMetadata 设置商户ID到gRPC metadata
-func WithMerchantIDRpcMetadata(ctx context.Context, merchantID int64, currencyCode string) context.Context {
+// WithMerchantIDCurrencyCodeRpcMetadata 设置商户ID 币种到gRPC metadata
+func WithMerchantIDCurrencyCodeRpcMetadata(ctx context.Context, merchantID int64, currencyCode string) context.Context {
 	if merchantID <= 0 {
 		return ctx
 	}
