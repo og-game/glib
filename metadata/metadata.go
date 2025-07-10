@@ -9,13 +9,14 @@ import (
 )
 
 const (
-	CtxMerchantID    = "x-merchant-id"
-	CtxMerchantInfo  = "x-merchant-info"
-	CtxUserID        = "x-user-id"
-	CtxCurrencyCode  = "x-currency-code"
-	CtxLanguage      = "x-language"
-	CtxUserInfo      = "x-user-info"
-	CtxSkipTenantKey = "x-skip-tenant" // 跳过租户条件的标记
+	CtxMerchantID   = "x-merchant-id"
+	CtxMerchantInfo = "x-merchant-info"
+	CtxUserID       = "x-user-id"
+	CtxCurrencyCode = "x-currency-code"
+	CtxLanguage     = "x-language"
+	CtxUserInfo     = "x-user-info"
+	CtxSkipTenant   = "x-skip-tenant" // 跳过租户条件的标记
+	CtxPlatformID   = "x-platform-id"
 )
 
 // WithMetadata 上下文数据
@@ -117,12 +118,12 @@ func GetMerchantIDCurrencyCodeFromRpcMetadata(ctx context.Context) (int64, strin
 
 // WithSkipTenant 跳过租户条件
 func WithSkipTenant(ctx context.Context) context.Context {
-	return context.WithValue(ctx, CtxSkipTenantKey, true)
+	return context.WithValue(ctx, CtxSkipTenant, true)
 }
 
 // ShouldSkipTenant 检查是否跳过租户条件
 func ShouldSkipTenant(ctx context.Context) bool {
-	if skip, ok := ctx.Value(CtxSkipTenantKey).(bool); ok {
+	if skip, ok := ctx.Value(CtxSkipTenant).(bool); ok {
 		return skip
 	}
 	return false
