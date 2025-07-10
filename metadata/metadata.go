@@ -23,6 +23,12 @@ func WithMetadata(ctx context.Context, key, val any) context.Context {
 	return context.WithValue(ctx, key, val)
 }
 
+func WithMerchantIDCurrencyCodeMetadata(ctx context.Context, merchantID int64, currencyCode string) context.Context {
+	ctx = context.WithValue(ctx, CtxMerchantID, merchantID)
+	ctx = context.WithValue(ctx, CtxCurrencyCode, currencyCode)
+	return ctx
+}
+
 // GetMetadataFromCtx 获取上下文数据
 func GetMetadataFromCtx(ctx context.Context, key any) any {
 	return ctx.Value(key)
@@ -45,6 +51,12 @@ func GetMerchantIDFromCtx(ctx context.Context) int64 {
 func GetCurrencyCodeFromCtx(ctx context.Context) string {
 	currencyCode, _ := GetMetadata[string](ctx, CtxCurrencyCode)
 	return currencyCode
+}
+
+func GetMerchantIDCurrencyCodeFromCtx(ctx context.Context) (merchantID int64, currencyCode string) {
+	merchantID, _ = GetMetadata[int64](ctx, CtxMerchantID)
+	currencyCode, _ = GetMetadata[string](ctx, CtxCurrencyCode)
+	return
 }
 
 func GetTraceIDFromCtx(ctx context.Context) string {
