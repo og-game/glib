@@ -20,7 +20,7 @@ const (
 	LockExpireTime = 120 * time.Second
 )
 
-func init() {
+func Init() {
 	flake = sonyflake.NewSonyflake(sonyflake.Settings{
 		StartTime: time.Now(),
 		MachineID: getMachineID,
