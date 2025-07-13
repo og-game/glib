@@ -15,11 +15,19 @@ const (
 	CtxCurrencyCode = "x-currency-code"
 	CtxLanguage     = "x-language"
 	CtxUserInfo     = "x-user-info"
+	CtxSkipTenant   = "x-skip-tenant" // 跳过租户条件的标记
+	CtxPlatformID   = "x-platform-id"
 )
 
 // WithMetadata 上下文数据
 func WithMetadata(ctx context.Context, key, val any) context.Context {
 	return context.WithValue(ctx, key, val)
+}
+
+func WithMerchantIDCurrencyCodeMetadata(ctx context.Context, merchantID int64, currencyCode string) context.Context {
+	ctx = context.WithValue(ctx, CtxMerchantID, merchantID)
+	ctx = context.WithValue(ctx, CtxCurrencyCode, currencyCode)
+	return ctx
 }
 
 // GetMetadataFromCtx 获取上下文数据
@@ -34,6 +42,22 @@ func GetMetadata[T any](ctx context.Context, key any) (T, bool) {
 	}
 	var zero T
 	return zero, false
+}
+
+func GetMerchantIDFromCtx(ctx context.Context) int64 {
+	merchantID, _ := GetMetadata[int64](ctx, CtxMerchantID)
+	return merchantID
+}
+
+func GetCurrencyCodeFromCtx(ctx context.Context) string {
+	currencyCode, _ := GetMetadata[string](ctx, CtxCurrencyCode)
+	return currencyCode
+}
+
+func GetMerchantIDCurrencyCodeFromCtx(ctx context.Context) (merchantID int64, currencyCode string) {
+	merchantID, _ = GetMetadata[int64](ctx, CtxMerchantID)
+	currencyCode, _ = GetMetadata[string](ctx, CtxCurrencyCode)
+	return
 }
 
 func GetTraceIDFromCtx(ctx context.Context) string {
@@ -90,4 +114,17 @@ func GetMerchantIDCurrencyCodeFromRpcMetadata(ctx context.Context) (int64, strin
 	}
 
 	return merchantID, currencyCode
+}
+
+// WithSkipTenant 跳过租户条件
+func WithSkipTenant(ctx context.Context) context.Context {
+	return context.WithValue(ctx, CtxSkipTenant, true)
+}
+
+// ShouldSkipTenant 检查是否跳过租户条件
+func ShouldSkipTenant(ctx context.Context) bool {
+	if skip, ok := ctx.Value(CtxSkipTenant).(bool); ok {
+		return skip
+	}
+	return false
 }
