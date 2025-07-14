@@ -48,6 +48,9 @@ func (dm *DBManager) Create(cs ...config.Config) error {
 
 // Must initialize the database
 func Must(cs ...config.Config) {
+	if len(cs) == 0 {
+		panic("failed to initialize databases: config is empty")
+	}
 	once.Do(func() {
 		if err := NewDBManager().Create(cs...); err != nil {
 			panic(fmt.Sprintf("failed to initialize databases: %v", err))
