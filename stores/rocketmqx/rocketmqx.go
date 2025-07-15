@@ -4,9 +4,11 @@ import (
 	"context"
 	"github.com/apache/rocketmq-clients/golang"
 	"github.com/apache/rocketmq-clients/golang/credentials"
+	v2 "github.com/apache/rocketmq-clients/golang/protocol/v2"
 	"github.com/og-game/glib/utils"
 	"github.com/zeromicro/go-zero/core/logx"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -57,7 +59,7 @@ func (r *RocketMqx) NewConsumer(handler PullMessageHandler) (err error) {
 
 	simpleConsumer, err := golang.NewSimpleConsumer(
 		r.createBaseConfig(),
-		golang.WithAwaitDuration(time.Duration(r.config.ConsumerConfig.AwaitDuration)),
+		golang.WithAwaitDuration(time.Duration(r.config.ConsumerConfig.AwaitDuration)*time.Second),
 		golang.WithSubscriptionExpressions(relations),
 	)
 	if err != nil {
@@ -70,13 +72,6 @@ func (r *RocketMqx) NewConsumer(handler PullMessageHandler) (err error) {
 		return
 	}
 
-	// 确保在函数退出时优雅停止消费者，并处理错误
-	defer func() {
-		if stopErr := simpleConsumer.GracefulStop(); stopErr != nil {
-			logx.Errorf("优雅停止消费者失败，原因为：%s", stopErr.Error())
-		}
-	}()
-
 	// 将消息处理逻辑提取到单独的函数中
 	go r.processMessages(simpleConsumer, handler, r.config.ConsumerConfig.TopicRelations.Topic)
 
@@ -88,7 +83,7 @@ func (r *RocketMqx) processMessages(consumer golang.SimpleConsumer, handler Pull
 	for {
 		ctx, cancel := context.WithTimeout(
 			context.Background(),
-			time.Duration(r.config.ConsumerConfig.AwaitDuration)*time.Second,
+			time.Duration(r.config.ConsumerConfig.AwaitDuration*2)*time.Second,
 		)
 		sleepTime := time.Duration(r.config.ConsumerConfig.AwaitDuration/2) * time.Second
 
@@ -99,6 +94,11 @@ func (r *RocketMqx) processMessages(consumer golang.SimpleConsumer, handler Pull
 		)
 
 		if err != nil {
+			cancel()
+			if strings.Contains(err.Error(), v2.Code_name[int32(v2.Code_MESSAGE_NOT_FOUND)]) {
+				time.Sleep(sleepTime)
+				continue
+			}
 			logx.Errorf("拉取消息失败，topic:%s,原因为:%s", topic, err.Error())
 			time.Sleep(sleepTime)
 			continue
