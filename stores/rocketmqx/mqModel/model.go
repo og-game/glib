@@ -5,6 +5,7 @@ type (
 		UserID        int64  `json:"user_id"`
 		GameID        int64  `json:"game_id"`
 		PlatformID    int64  `json:"platform_id"`
+		MerchantID    int64  `json:"merchant_id"`
 		DeviceID      string `json:"device_id"`
 		DeviceIp      string `json:"device_ip"`
 		DeviceOs      string `json:"device_os"`
