@@ -24,6 +24,7 @@ type (
 		BalanceBefore   decimal.Decimal `json:"balance_before"`
 		BalanceAfter    decimal.Decimal `json:"balance_after"`
 		CurrencyCode    string          `json:"currency_code"`     // 货币代码
+		RelatedOrderID  string          `json:"related_order_id"`  // 账变记录关联的交易ID
 		PlatformOrderID string          `json:"platform_order_id"` // 平台订单ID
 		MerchantOrderID string          `json:"merchant_order_id"` // 商户订单ID
 		TransactionID   string          `json:"transaction_id"`    // 交易ID
