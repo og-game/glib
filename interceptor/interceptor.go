@@ -14,10 +14,11 @@ func ServerTenantInterceptor() grpc.UnaryServerInterceptor {
 		handler grpc.UnaryHandler) (interface{}, error) {
 
 		// 从Metadata获取商户ID，如果没有就是0
-		merchantID, currencyCode := metadata.GetMerchantIDCurrencyCodeFromRpcMetadata(ctx)
+		merchantID, currencyCode, merchantUserID := metadata.GetMerchantIDCurrencyCodeFromRpcMetadata(ctx)
 
 		// 写入Context（即使是0也写入）
 		ctx = metadata.WithMerchantIDCurrencyCodeMetadata(ctx, merchantID, currencyCode)
+		ctx = metadata.WithMerchantUserIDMetadata(ctx, merchantUserID)
 		// 继续处理
 		return handler(ctx, req)
 	}
@@ -32,10 +33,11 @@ func ServerTenantStreamInterceptor() grpc.StreamServerInterceptor {
 		ctx := ss.Context()
 
 		// 从Metadata获取商户ID，如果没有就是0
-		merchantID, currencyCode := metadata.GetMerchantIDCurrencyCodeFromRpcMetadata(ctx)
+		merchantID, currencyCode, merchantUserID := metadata.GetMerchantIDCurrencyCodeFromRpcMetadata(ctx)
 
 		// 写入Context（即使是0也写入）
 		ctx = metadata.WithMerchantIDCurrencyCodeMetadata(ctx, merchantID, currencyCode)
+		ctx = metadata.WithMerchantUserIDMetadata(ctx, merchantUserID)
 
 		// 包装ServerStream
 		wrappedStream := &wrappedServerStream{
@@ -66,8 +68,9 @@ func ClientTenantInterceptor() grpc.UnaryClientInterceptor {
 
 		// 从Context获取商户ID并写入Metadata（包括0值）
 		merchantID, currencyCode := metadata.GetMerchantIDCurrencyCodeFromCtx(ctx)
+		merchantUserID := metadata.GetMerchantUserIDFromCtx(ctx)
 
-		ctx = metadata.WithMerchantIDCurrencyCodeRpcMetadata(ctx, merchantID, currencyCode)
+		ctx = metadata.WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx, merchantID, currencyCode, merchantUserID)
 
 		// 继续调用
 		return invoker(ctx, method, req, reply, cc, opts...)
@@ -81,8 +84,9 @@ func ClientTenantStreamInterceptor() grpc.StreamClientInterceptor {
 
 		// 从Context获取商户ID并写入Metadata
 		merchantID, currencyCode := metadata.GetMerchantIDCurrencyCodeFromCtx(ctx)
+		merchantUserID := metadata.GetMerchantUserIDFromCtx(ctx)
 
-		ctx = metadata.WithMerchantIDCurrencyCodeRpcMetadata(ctx, merchantID, currencyCode)
+		ctx = metadata.WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx, merchantID, currencyCode, merchantUserID)
 
 		return streamer(ctx, desc, cc, method, opts...)
 	}
