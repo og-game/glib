@@ -9,14 +9,15 @@ import (
 )
 
 const (
-	CtxMerchantID   = "x-merchant-id"
-	CtxMerchantInfo = "x-merchant-info"
-	CtxUserID       = "x-user-id"
-	CtxCurrencyCode = "x-currency-code"
-	CtxLanguage     = "x-language"
-	CtxUserInfo     = "x-user-info"
-	CtxSkipTenant   = "x-skip-tenant" // 跳过租户条件的标记
-	CtxPlatformID   = "x-platform-id"
+	CtxMerchantID     = "x-merchant-id"
+	CtxMerchantUserID = "x-merchant-user-id"
+	CtxMerchantInfo   = "x-merchant-info"
+	CtxUserID         = "x-user-id"
+	CtxCurrencyCode   = "x-currency-code"
+	CtxLanguage       = "x-language"
+	CtxUserInfo       = "x-user-info"
+	CtxSkipTenant     = "x-skip-tenant" // 跳过租户条件的标记
+	CtxPlatformID     = "x-platform-id"
 )
 
 // WithMetadata 上下文数据
@@ -54,6 +55,11 @@ func GetCurrencyCodeFromCtx(ctx context.Context) string {
 	return currencyCode
 }
 
+func GetMerchantUserIDFromCtx(ctx context.Context) string {
+	merchantUserID, _ := GetMetadata[string](ctx, CtxMerchantUserID)
+	return merchantUserID
+}
+
 func GetMerchantIDCurrencyCodeFromCtx(ctx context.Context) (merchantID int64, currencyCode string) {
 	merchantID, _ = GetMetadata[int64](ctx, CtxMerchantID)
 	currencyCode, _ = GetMetadata[string](ctx, CtxCurrencyCode)
@@ -68,8 +74,8 @@ func GetTraceIDFromCtx(ctx context.Context) string {
 	return ""
 }
 
-// WithMerchantIDCurrencyCodeRpcMetadata 设置商户ID 币种到gRPC metadata
-func WithMerchantIDCurrencyCodeRpcMetadata(ctx context.Context, merchantID int64, currencyCode string) context.Context {
+// WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata 设置商户ID 币种 商户用户id 到gRPC metadata
+func WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx context.Context, merchantID int64, currencyCode, merchantUserID string) context.Context {
 	if merchantID <= 0 {
 		return ctx
 	}
@@ -83,37 +89,52 @@ func WithMerchantIDCurrencyCodeRpcMetadata(ctx context.Context, merchantID int64
 
 	md.Set(CtxMerchantID, cast.ToString(merchantID))
 	md.Set(CtxCurrencyCode, currencyCode)
+	md.Set(CtxMerchantUserID, merchantUserID)
 	return metadata.NewOutgoingContext(ctx, md)
 }
 
 // GetMerchantIDCurrencyCodeFromRpcMetadata 从gRPC metadata获取商户ID和币种
-func GetMerchantIDCurrencyCodeFromRpcMetadata(ctx context.Context) (int64, string) {
+func GetMerchantIDCurrencyCodeFromRpcMetadata(ctx context.Context) (merchantID int64, currencyCode string, merchantUserID string) {
+	var err error
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return 0, ""
+		return
 	}
 
 	values := md.Get(CtxMerchantID)
 	if len(values) == 0 {
-		return 0, ""
+		return
 	}
 
-	merchantID, err := cast.ToInt64E(values[0])
+	merchantID, err = cast.ToInt64E(values[0])
 	if err != nil {
-		logx.Errorf("GetMerchantIDFromMetadata error: %v", err)
-		return 0, ""
+		logx.Errorf("Get merchant id from metadata error: %v", err)
+		return
 	}
+
 	values2 := md.Get(CtxCurrencyCode)
 	if len(values2) == 0 {
-		return 0, ""
-	}
-	currencyCode, err := cast.ToStringE(values2[0])
-	if err != nil {
-		logx.Errorf("GetMerchantIDFromMetadata error: %v", err)
-		return 0, ""
+		return
 	}
 
-	return merchantID, currencyCode
+	currencyCode, err = cast.ToStringE(values2[0])
+	if err != nil {
+		logx.Errorf("Get currency code from metadata error: %v", err)
+		return
+	}
+
+	values3 := md.Get(CtxMerchantUserID)
+	if len(values3) == 0 {
+		return
+	}
+
+	merchantUserID, err = cast.ToStringE(values3[0])
+	if err != nil {
+		logx.Errorf("Get merchant user id from metadata error: %v", err)
+		return
+	}
+
+	return
 }
 
 // WithSkipTenant 跳过租户条件
