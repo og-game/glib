@@ -11,6 +11,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 	"sync"
+	"time"
 )
 
 var (
@@ -195,6 +196,39 @@ func CriticalActivityOptions(options ...core.ActivityOption) workflow.ActivityOp
 	opts := ActivityOptions(options...)      // 获取标准活动选项
 	opts.RetryPolicy = pkg.Get(pkg.Critical) // 使用关键重试策略
 	return opts                              // 返回带有关键重试策略的选项
+}
+
+// HighFrequencyFastOptions 高频快速处理选项
+// 适用于：高频率调用、执行时间短的任务（如缓存操作、简单计算等）
+func HighFrequencyFastOptions() workflow.ActivityOptions {
+	return ActivityOptions(
+		core.WithScheduleToStartTimeout(5*time.Second), // 更快的调度
+		core.WithStartToCloseTimeout(30*time.Second),   // 快速执行
+		core.WithHeartbeatTimeout(10*time.Second),      // 频繁心跳
+		core.WithRetryPolicy(pkg.Critical),             // 重试策略
+	)
+}
+
+// LowFrequencySlowOptions 短频慢速处理选项
+// 适用于：低频率调用、执行时间长的任务（如数据处理、报表生成等）
+func LowFrequencySlowOptions() workflow.ActivityOptions {
+	return ActivityOptions(
+		core.WithScheduleToStartTimeout(2*time.Minute), // 允许较长等待
+		core.WithStartToCloseTimeout(60*time.Minute),   // 长时间执行
+		core.WithHeartbeatTimeout(2*time.Minute),       // 较长心跳间隔
+		core.WithRetryPolicy(pkg.Critical),             // 重试策略
+	)
+}
+
+// NormalProcessingOptions 正常处理选项
+// 适用于：常规业务处理、外部API调用等标准场景
+func NormalProcessingOptions() workflow.ActivityOptions {
+	return ActivityOptions(
+		core.WithScheduleToStartTimeout(30*time.Second), // 标准调度时间
+		core.WithStartToCloseTimeout(5*time.Minute),     // 标准执行时间
+		core.WithHeartbeatTimeout(30*time.Second),       // 标准心跳间隔
+		core.WithRetryPolicy(pkg.Critical),              // 重试策略
+	)
 }
 
 // LocalActivityOptions 创建标准的本地活动选项
