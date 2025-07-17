@@ -37,9 +37,10 @@ func (s *SimpleInterceptor) InterceptActivity(
 	next interceptor.ActivityInboundInterceptor,
 ) interceptor.ActivityInboundInterceptor {
 	return &SimpleActivityInterceptor{
-		ActivityInboundInterceptorBase: interceptor.ActivityInboundInterceptorBase{},
-		logger:                         s.logger,
-		next:                           next,
+		ActivityInboundInterceptorBase: interceptor.ActivityInboundInterceptorBase{
+			Next: next, // 关键：直接设置Next字段
+		},
+		logger: s.logger,
 	}
 }
 
@@ -49,9 +50,10 @@ func (s *SimpleInterceptor) InterceptWorkflow(
 	next interceptor.WorkflowInboundInterceptor,
 ) interceptor.WorkflowInboundInterceptor {
 	return &SimpleWorkflowInterceptor{
-		WorkflowInboundInterceptorBase: interceptor.WorkflowInboundInterceptorBase{},
-		logger:                         workflow.GetLogger(ctx),
-		next:                           next,
+		WorkflowInboundInterceptorBase: interceptor.WorkflowInboundInterceptorBase{
+			Next: next, // 关键：直接设置Next字段
+		},
+		logger: workflow.GetLogger(ctx),
 	}
 }
 
@@ -59,7 +61,6 @@ func (s *SimpleInterceptor) InterceptWorkflow(
 type SimpleActivityInterceptor struct {
 	interceptor.ActivityInboundInterceptorBase
 	logger log.Logger
-	next   interceptor.ActivityInboundInterceptor
 }
 
 // ExecuteActivity 执行活动拦截
@@ -83,7 +84,7 @@ func (a *SimpleActivityInterceptor) ExecuteActivity(
 	)
 
 	// 执行活动
-	result, err := a.next.ExecuteActivity(ctx, in)
+	result, err := a.ActivityInboundInterceptorBase.ExecuteActivity(ctx, in)
 
 	// 记录结果
 	duration := time.Since(start)
@@ -108,7 +109,6 @@ func (a *SimpleActivityInterceptor) ExecuteActivity(
 type SimpleWorkflowInterceptor struct {
 	interceptor.WorkflowInboundInterceptorBase
 	logger log.Logger
-	next   interceptor.WorkflowInboundInterceptor
 }
 
 // ExecuteWorkflow 执行工作流拦截
@@ -132,7 +132,7 @@ func (w *SimpleWorkflowInterceptor) ExecuteWorkflow(
 	)
 
 	// 执行工作流
-	result, err := w.next.ExecuteWorkflow(ctx, in)
+	result, err := w.WorkflowInboundInterceptorBase.ExecuteWorkflow(ctx, in)
 
 	// 记录结果
 	duration := workflow.Now(ctx).Sub(start)
