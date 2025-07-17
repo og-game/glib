@@ -28,6 +28,12 @@ func WithMetadata(ctx context.Context, key, val any) context.Context {
 func WithMerchantIDCurrencyCodeMetadata(ctx context.Context, merchantID int64, currencyCode string) context.Context {
 	ctx = context.WithValue(ctx, CtxMerchantID, merchantID)
 	ctx = context.WithValue(ctx, CtxCurrencyCode, currencyCode)
+	ctx = context.WithValue(ctx, CtxCurrencyCode, currencyCode)
+	return ctx
+}
+
+func WithMerchantUserIDMetadata(ctx context.Context, merchantUserID string) context.Context {
+	ctx = context.WithValue(ctx, CtxMerchantUserID, merchantUserID)
 	return ctx
 }
 
