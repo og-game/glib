@@ -6,12 +6,11 @@ import (
 	"github.com/og-game/glib/flowcore/config"
 	"github.com/og-game/glib/flowcore/core"
 	"github.com/og-game/glib/flowcore/pkg"
-	"sync"
-
 	enumspb "go.temporal.io/api/enums/v1"
 	tclient "go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
+	"sync"
 )
 
 var (
@@ -162,31 +161,40 @@ func WorkflowOptionsWithRetry(workflowID, taskQueue string, retryPolicy *tempora
 }
 
 // ActivityOptions 创建标准的活动选项
-func ActivityOptions() workflow.ActivityOptions {
+func ActivityOptions(options ...core.ActivityOption) workflow.ActivityOptions {
 	if !initialized {
 		panic("temporal SDK not initialized") // 如果未初始化，触发 panic
 	}
 
-	return workflow.ActivityOptions{
+	// 默认选项
+	opts := workflow.ActivityOptions{
 		ScheduleToStartTimeout: sdkConfig.Timeout.ActivityStart,     // 调度到启动的超时时间
 		StartToCloseTimeout:    sdkConfig.Timeout.ActivityExecution, // 启动到关闭的超时时间
 		HeartbeatTimeout:       sdkConfig.Timeout.ActivityHeartbeat, // 心跳超时时间
 		RetryPolicy:            pkg.Get(pkg.Standard),               // 使用标准重试策略
 	}
+
+	// 应用自定义选项
+	for _, option := range options {
+		option(&opts)
+	}
+
+	return opts
+
 }
 
 // ActivityOptionsWithRetry 创建带有自定义重试策略的活动选项
-func ActivityOptionsWithRetry(retryPolicyName string) workflow.ActivityOptions {
-	options := ActivityOptions()                   // 获取标准活动选项
-	options.RetryPolicy = pkg.Get(retryPolicyName) // 设置指定名称的重试策略
-	return options                                 // 返回带有重试策略的选项
+func ActivityOptionsWithRetry(retryPolicyName string, options ...core.ActivityOption) workflow.ActivityOptions {
+	opts := ActivityOptions(options...)         // 获取标准活动选项
+	opts.RetryPolicy = pkg.Get(retryPolicyName) // 设置指定名称的重试策略
+	return opts                                 // 返回带有重试策略的选项
 }
 
 // CriticalActivityOptions 创建关键活动的活动选项
-func CriticalActivityOptions() workflow.ActivityOptions {
-	options := ActivityOptions()                // 获取标准活动选项
-	options.RetryPolicy = pkg.Get(pkg.Critical) // 使用关键重试策略
-	return options                              // 返回带有关键重试策略的选项
+func CriticalActivityOptions(options ...core.ActivityOption) workflow.ActivityOptions {
+	opts := ActivityOptions(options...)      // 获取标准活动选项
+	opts.RetryPolicy = pkg.Get(pkg.Critical) // 使用关键重试策略
+	return opts                              // 返回带有关键重试策略的选项
 }
 
 // LocalActivityOptions 创建标准的本地活动选项
