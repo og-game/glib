@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/og-game/glib/flowcore/config"
+	"github.com/og-game/glib/flowcore/pkg"
+	"go.temporal.io/sdk/interceptor"
 	"sync"
 
 	"go.temporal.io/sdk/client"
@@ -30,11 +32,17 @@ var globalManager = &Manager{
 
 // NewWorker 创建一个新的 worker
 func NewWorker(c client.Client, cfg *config.WorkerConfig) *Worker {
+
+	// 创建默认拦截器
+	logger := pkg.NewDevelopmentLogger("info")
+	defaultInterceptor := pkg.NewSimpleInterceptor(logger)
+
 	options := worker.Options{
 		MaxConcurrentActivityExecutionSize:     cfg.MaxConcurrentActivities,
 		MaxConcurrentWorkflowTaskExecutionSize: cfg.MaxConcurrentWorkflows,
 		EnableSessionWorker:                    cfg.EnableSessionWorker,
 		StickyScheduleToStartTimeout:           cfg.StickyScheduleToStart,
+		Interceptors:                           []interceptor.WorkerInterceptor{defaultInterceptor}, // 默认添加拦截器
 	}
 
 	w := worker.New(c, cfg.TaskQueue, options)
@@ -147,4 +155,14 @@ func GetWorkers() []*Worker {
 	workers := make([]*Worker, len(globalManager.workers))
 	copy(workers, globalManager.workers)
 	return workers
+}
+
+// GetInterceptorMetrics 获取拦截器指标
+func GetInterceptorMetrics() map[string]int64 {
+	return pkg.GetSimpleMetrics()
+}
+
+// ResetInterceptorMetrics 重置拦截器指标
+func ResetInterceptorMetrics() {
+	pkg.ResetMetrics()
 }
