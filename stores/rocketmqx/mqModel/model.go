@@ -36,8 +36,9 @@ type (
 		TradeTime       int64           `json:"trade_time"`        // 交易时间（hao毫秒）
 		Remark          string          `json:"remark"`            // 备注
 		Description     string          `json:"description"`       // 描述
-		ClientIp        string          `json:"client_ip"`         // 客户端IP
-		UserAgent       string          `json:"user_agent"`        // 用户代理
+		ClientIP        string          `json:"client_ip"`         // 客户端IP
+		DeviceID        string          `json:"device_id"`         // 设备ID
+		DeviceOS        string          `json:"device_os"`         // 设备型号
 		ExtData         string          `json:"ext_data"`          // 扩展数据
 	}
 )
