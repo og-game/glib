@@ -1,6 +1,8 @@
 package mq_model
 
-import "github.com/shopspring/decimal"
+import (
+	"github.com/shopspring/decimal"
+)
 
 type (
 	UserGameLog struct {
