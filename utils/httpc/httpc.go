@@ -3,6 +3,8 @@ package httpc
 import (
 	"context"
 	"github.com/go-resty/resty/v2"
+	"github.com/spf13/cast"
+	"os"
 	"sync"
 )
 
@@ -14,7 +16,19 @@ func Do(ctx context.Context) *resty.Request {
 	once.Do(func() {
 		engine = MustClient()
 	})
-	return engine.R().SetContext(ctx)
+
+	debug := cast.ToBool(os.Getenv("HTTP_REQUEST_DEBUG"))
+	trace := cast.ToBool(os.Getenv("HTTP_REQUEST_TRACE"))
+
+	r := engine.R().
+		SetContext(ctx).
+		SetDebug(debug)
+
+	if trace {
+		r = r.EnableTrace()
+	}
+
+	return r
 }
 
 func New(ctx context.Context, fs ...func(cli *resty.Client)) *resty.Request {
