@@ -1,6 +1,8 @@
 package mq_model
 
-import "github.com/shopspring/decimal"
+import (
+	"github.com/shopspring/decimal"
+)
 
 type (
 	UserGameLog struct {
@@ -35,5 +37,20 @@ type (
 		ClientIp        string          `json:"client_ip"`         // 客户端IP
 		UserAgent       string          `json:"user_agent"`        // 用户代理
 		ExtData         string          `json:"ext_data"`          // 扩展数据
+	}
+	// TransferBetRecord 用户转账游戏记录
+	TransferBetRecord struct {
+		Status        int64           `json:"status"`         // 投注状态 ( 1-投注, 2-结算, 3-投注取消, 4-废弃)
+		BetAmount     decimal.Decimal `json:"bet_amount"`     // 投注金额
+		ThirdOrderNo  string          `json:"third_order_no"` // 三方订单号，通常是唯一的业务标识。
+		ThirdGameID   string          `json:"third_game_id"`  // 三方平台的游戏ID。
+		RoundID       string          `json:"round_id"`       // 牌局或游戏回合的唯一编号。
+		UserID        string          `json:"user_id"`        // 中台用户ID。
+		MerchantID    int64           `json:"merchant_id"`    // 中台商户ID。
+		PlatformID    int64           `json:"platform_id"`    // 中台游戏厂商ID。
+		SettledAmount decimal.Decimal `json:"settled_amount"` // // 结算金额，即玩家的输赢金额。
+		CurrencyCode  string          `json:"currency_code"`  // 货币代码，遵循 ISO 4217 标准，例如 "CNY", "USD"。
+		CreatedAt     int64           `json:"created_at"`     // 创建时间[投注时间]，Unix 时间戳。
+		SettledAt     int64           `json:"settled_at"`     // 结算时间，Unix 时间戳。
 	}
 )
