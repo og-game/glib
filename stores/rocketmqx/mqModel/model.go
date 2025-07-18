@@ -19,11 +19,13 @@ type (
 
 	// UserTransferRecord 用户账变记录
 	UserTransferRecord struct {
-		MerchantID      int64           `json:"merchant_id"`   // 商户ID
-		UserID          int64           `json:"user_id"`       // 用户ID
-		PlatformID      int64           `json:"platform_id"`   // 平台ID
-		TransferType    int64           `json:"transfer_type"` // 转账类型（对应 v1.UserBalanceTransactionType）
-		Amount          decimal.Decimal `json:"amount"`        // 金额
+		MerchantID      int64           `json:"merchant_id"`      // 商户ID
+		UserID          int64           `json:"user_id"`          // 用户ID
+		MerchantUserID  string          `json:"merchant_user_id"` // 商户用户id
+		PlatformID      int64           `json:"platform_id"`      // 平台ID
+		GameID          int64           `json:"game_id"`          // 游戏ID
+		TransferType    int64           `json:"transfer_type"`    // 转账类型（对应 v1.UserBalanceTransactionType）
+		Amount          decimal.Decimal `json:"amount"`           // 金额
 		BalanceBefore   decimal.Decimal `json:"balance_before"`
 		BalanceAfter    decimal.Decimal `json:"balance_after"`
 		CurrencyCode    string          `json:"currency_code"`     // 货币代码
