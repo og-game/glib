@@ -3,8 +3,11 @@ package pkg
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"go.temporal.io/sdk/log"
 	"go.uber.org/zap"
@@ -26,10 +29,271 @@ const (
 	LevelError
 )
 
-// NewLogger 创建一个新的带有指定日志级别的 zap logger
+// ANSI 颜色代码
+const (
+	ColorReset   = "\033[0m"
+	ColorRed     = "\033[31m"
+	ColorGreen   = "\033[32m"
+	ColorYellow  = "\033[33m"
+	ColorBlue    = "\033[34m"
+	ColorMagenta = "\033[35m"
+	ColorCyan    = "\033[36m"
+	ColorBold    = "\033[1m"
+
+	// 粗体颜色组合
+	ColorRedBold     = "\033[1;31m"
+	ColorGreenBold   = "\033[1;32m"
+	ColorYellowBold  = "\033[1;33m"
+	ColorBlueBold    = "\033[1;34m"
+	ColorMagentaBold = "\033[1;35m"
+	ColorCyanBold    = "\033[1;36m"
+)
+
+var (
+	projectRootOnce sync.Once
+	projectRootPath string
+	enableColor     = isColorTerminal()
+)
+
+// LoggerConfig 日志配置
+type LoggerConfig struct {
+	Level       string // debug, info, warn, error
+	WithIcon    bool   // 是否显示图标
+	WithColor   bool   // 是否启用颜色
+	Format      string // console, json
+	ShowCaller  bool   // 是否显示调用者信息
+	ProjectRoot string // 项目根目录
+}
+
+// 默认配置
+func defaultConfig() LoggerConfig {
+	return LoggerConfig{
+		Level:      "info",
+		WithIcon:   true,
+		WithColor:  true,
+		Format:     "console",
+		ShowCaller: true,
+	}
+}
+
+// isColorTerminal 检测终端是否支持颜色
+func isColorTerminal() bool {
+	term := os.Getenv("TERM")
+	colorTerm := os.Getenv("COLORTERM")
+
+	if colorTerm != "" {
+		return true
+	}
+
+	colorTerms := []string{"xterm", "screen", "tmux", "rxvt", "ansi"}
+	for _, ct := range colorTerms {
+		if strings.Contains(term, ct) {
+			return true
+		}
+	}
+	return false
+}
+
+// getColor 根据配置返回颜色代码
+func getColor(color string) string {
+	if enableColor {
+		return color
+	}
+	return ""
+}
+
+// customTimeEncoder 时间编码器
+func customTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+	enc.AppendString(t.Format("2006-01-02 15:04:05.000"))
+}
+
+// customLevelEncoder 级别编码器
+func customLevelEncoder(withIcon bool) zapcore.LevelEncoder {
+	return func(level zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+		var levelStr string
+		switch level {
+		case zapcore.DebugLevel:
+			if withIcon {
+				levelStr = getColor(ColorCyanBold) + "🔍[DEBUG]" + getColor(ColorReset)
+			} else {
+				levelStr = "[DEBUG]"
+			}
+		case zapcore.InfoLevel:
+			if withIcon {
+				levelStr = getColor(ColorGreenBold) + "ℹ️[INFO]" + getColor(ColorReset)
+			} else {
+				levelStr = "[INFO] "
+			}
+		case zapcore.WarnLevel:
+			if withIcon {
+				levelStr = getColor(ColorYellowBold) + "⚠️[WARN]" + getColor(ColorReset)
+			} else {
+				levelStr = "[WARN] "
+			}
+		case zapcore.ErrorLevel:
+			if withIcon {
+				levelStr = getColor(ColorRedBold) + "🚨[ERROR]" + getColor(ColorReset)
+			} else {
+				levelStr = "[ERROR]"
+			}
+		default:
+			levelStr = "[UNKNOWN]"
+		}
+		enc.AppendString(levelStr)
+	}
+}
+
+// customCallerEncoder 调用者编码器
+func customCallerEncoder(withIcon bool) zapcore.CallerEncoder {
+	return func(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEncoder) {
+		file := getRelativePath(caller.File)
+
+		pc := caller.PC
+		fn := runtime.FuncForPC(pc)
+		funcName := "unknown"
+		if fn != nil {
+			funcName = fn.Name()
+			if idx := strings.LastIndex(funcName, "."); idx != -1 {
+				funcName = funcName[idx+1:]
+			}
+		}
+
+		if withIcon {
+			// 📂 文件路径 - 蓝色粗体，函数名 - 紫色粗体
+			fileStr := getColor(ColorBlueBold) + fmt.Sprintf("📂 %s:%d", file, caller.Line) + getColor(ColorReset)
+			funcStr := getColor(ColorMagentaBold) + funcName + getColor(ColorReset)
+			enc.AppendString(fmt.Sprintf("%s:%s", fileStr, funcStr))
+		} else {
+			enc.AppendString(fmt.Sprintf("@ %s:%d:%s", file, caller.Line, funcName))
+		}
+	}
+}
+
+// findProjectRoot 查找项目根目录
+func findProjectRoot() string {
+	projectRootOnce.Do(func() {
+		_, currentFile, _, ok := runtime.Caller(0)
+		if !ok {
+			if wd, err := os.Getwd(); err == nil {
+				projectRootPath = wd
+			} else {
+				projectRootPath = "."
+			}
+			return
+		}
+
+		dir := filepath.Dir(currentFile)
+		for {
+			for _, marker := range []string{"go.mod", ".git", "Makefile", "README.md"} {
+				if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+					projectRootPath = dir
+					return
+				}
+			}
+
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				if wd, err := os.Getwd(); err == nil {
+					projectRootPath = wd
+				} else {
+					projectRootPath = "."
+				}
+				return
+			}
+			dir = parent
+		}
+	})
+	return projectRootPath
+}
+
+// getRelativePath 获取相对路径
+func getRelativePath(fullPath string) string {
+	projectRoot := findProjectRoot()
+
+	if relPath, err := filepath.Rel(projectRoot, fullPath); err == nil {
+		if !strings.HasPrefix(relPath, "..") {
+			cleanPath := filepath.ToSlash(relPath)
+
+			// 智能压缩长路径
+			parts := strings.Split(cleanPath, "/")
+			if len(parts) > 4 {
+				cleanPath = parts[0] + "/.../" + strings.Join(parts[len(parts)-2:], "/")
+			}
+			return cleanPath
+		}
+	}
+
+	// 兜底方案
+	parts := strings.Split(filepath.ToSlash(fullPath), "/")
+	if len(parts) >= 3 {
+		return strings.Join(parts[len(parts)-3:], "/")
+	}
+	return filepath.Base(fullPath)
+}
+
+// isFrameworkCode 判断是否是框架代码
+func isFrameworkCode(file string) bool {
+	frameworkPaths := []string{
+		"/go/pkg/mod/", "/usr/local/go/src/", "go.temporal.io",
+		"go.uber.org/zap", "/runtime/", "/reflect/", "src/",
+	}
+
+	for _, framework := range frameworkPaths {
+		if strings.Contains(file, framework) {
+			return true
+		}
+	}
+
+	return strings.HasSuffix(file, "logger.go")
+}
+
+// findUserCode 查找用户代码位置
+func findUserCode(skip int) (string, int, string, bool) {
+	for i := skip; i < skip+10; i++ {
+		pc, file, line, ok := runtime.Caller(i)
+		if !ok {
+			break
+		}
+
+		if isFrameworkCode(file) {
+			continue
+		}
+
+		fn := runtime.FuncForPC(pc)
+		funcName := "unknown"
+		if fn != nil {
+			funcName = fn.Name()
+			if idx := strings.LastIndex(funcName, "."); idx != -1 {
+				funcName = funcName[idx+1:]
+			}
+		}
+
+		return file, line, funcName, true
+	}
+	return "unknown", 0, "unknown", false
+}
+
+// NewLogger 创建默认日志记录器
 func NewLogger(level string) log.Logger {
-	logLevel := parseLogLevel(level)
-	zapLogger := createZapLogger(logLevel)
+	config := defaultConfig()
+	config.Level = level
+	return NewLoggerWithConfig(config)
+}
+
+// NewLoggerWithConfig 使用配置创建 logger
+func NewLoggerWithConfig(config LoggerConfig) log.Logger {
+	logLevel := parseLogLevel(config.Level)
+
+	if config.ProjectRoot != "" {
+		projectRootPath = config.ProjectRoot
+	}
+
+	// 设置颜色
+	if config.WithColor {
+		enableColor = true
+	}
+
+	zapLogger := createZapLogger(logLevel, config)
 
 	return &ZapLogger{
 		logger: zapLogger,
@@ -37,20 +301,49 @@ func NewLogger(level string) log.Logger {
 	}
 }
 
-// NewLoggerWithZap 使用现有的 zap logger 创建一个 logger
-func NewLoggerWithZap(zapLogger *zap.Logger, level string) log.Logger {
-	logLevel := parseLogLevel(level)
-	return &ZapLogger{
-		logger: zapLogger,
-		level:  logLevel,
+// createZapLogger 创建 zap logger
+func createZapLogger(level LogLevel, config LoggerConfig) *zap.Logger {
+	var encoder zapcore.Encoder
+
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:        "time",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeTime:     customTimeEncoder,
+		EncodeLevel:    customLevelEncoder(config.WithIcon),
+		EncodeDuration: zapcore.SecondsDurationEncoder,
+		EncodeName:     zapcore.FullNameEncoder,
 	}
+
+	if config.ShowCaller {
+		encoderConfig.EncodeCaller = customCallerEncoder(config.WithIcon)
+	}
+
+	if config.Format == "json" {
+		encoder = zapcore.NewJSONEncoder(encoderConfig)
+	} else {
+		encoderConfig.ConsoleSeparator = " | "
+		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+	}
+
+	core := zapcore.NewCore(
+		encoder,
+		zapcore.AddSync(os.Stdout),
+		mapToZapLevel(level),
+	)
+
+	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(3))
+	return logger.Named("temporal")
 }
 
 // Debug 记录调试信息
 func (l *ZapLogger) Debug(msg string, keyvals ...interface{}) {
 	if l.level <= LevelDebug {
 		fields := l.parseKeyvals(keyvals...)
-		// 添加调用者信息
 		fields = append(fields, l.getCallerField())
 		l.logger.Debug(msg, fields...)
 	}
@@ -60,7 +353,6 @@ func (l *ZapLogger) Debug(msg string, keyvals ...interface{}) {
 func (l *ZapLogger) Info(msg string, keyvals ...interface{}) {
 	if l.level <= LevelInfo {
 		fields := l.parseKeyvals(keyvals...)
-		// 添加调用者信息
 		fields = append(fields, l.getCallerField())
 		l.logger.Info(msg, fields...)
 	}
@@ -70,7 +362,6 @@ func (l *ZapLogger) Info(msg string, keyvals ...interface{}) {
 func (l *ZapLogger) Warn(msg string, keyvals ...interface{}) {
 	if l.level <= LevelWarn {
 		fields := l.parseKeyvals(keyvals...)
-		// 添加调用者信息
 		fields = append(fields, l.getCallerField())
 		l.logger.Warn(msg, fields...)
 	}
@@ -80,41 +371,31 @@ func (l *ZapLogger) Warn(msg string, keyvals ...interface{}) {
 func (l *ZapLogger) Error(msg string, keyvals ...interface{}) {
 	if l.level <= LevelError {
 		fields := l.parseKeyvals(keyvals...)
-		// 添加调用者信息
 		fields = append(fields, l.getCallerField())
 		l.logger.Error(msg, fields...)
 	}
 }
 
-// getCallerField 获取真实的调用者信息
+// getCallerField 获取调用者信息
 func (l *ZapLogger) getCallerField() zap.Field {
-	// 跳过更多层调用栈来找到真实的调用者
-	// 通常需要跳过: getCallerField -> Error/Info/Debug/Warn -> temporal internal -> your code
-	pc, file, line, ok := runtime.Caller(4) // 尝试不同的层数
+	file, line, funcName, ok := findUserCode(3)
 	if !ok {
-		return zap.String("caller", "unknown")
+		return zap.String("source", "unknown")
 	}
 
-	// 获取函数名
-	fn := runtime.FuncForPC(pc)
-	funcName := "unknown"
-	if fn != nil {
-		funcName = fn.Name()
-		// 简化函数名，只保留最后部分
-		if idx := strings.LastIndex(funcName, "."); idx != -1 {
-			funcName = funcName[idx+1:]
-		}
+	relativePath := getRelativePath(file)
+
+	// 应用颜色：文件路径蓝色粗体，函数名紫色粗体
+	if enableColor {
+		fileStr := getColor(ColorBlueBold) + fmt.Sprintf("%s:%d", relativePath, line) + getColor(ColorReset)
+		funcStr := getColor(ColorMagentaBold) + funcName + getColor(ColorReset)
+		return zap.String("source", fmt.Sprintf("%s:%s", fileStr, funcStr))
 	}
 
-	// 简化文件路径，只保留相对路径
-	if idx := strings.LastIndex(file, "/"); idx != -1 {
-		file = file[idx+1:]
-	}
-
-	return zap.String("source", fmt.Sprintf("%s:%d:%s", file, line, funcName))
+	return zap.String("source", fmt.Sprintf("%s:%d:%s", relativePath, line, funcName))
 }
 
-// parseKeyvals 将 keyvals 转换为 zap 字段
+// parseKeyvals 转换 keyvals 为 zap 字段
 func (l *ZapLogger) parseKeyvals(keyvals ...interface{}) []zap.Field {
 	if len(keyvals) == 0 {
 		return nil
@@ -128,7 +409,6 @@ func (l *ZapLogger) parseKeyvals(keyvals ...interface{}) []zap.Field {
 			value := keyvals[i+1]
 			fields = append(fields, zap.Any(key, value))
 		} else {
-			// Handle odd number of keyvals
 			key := toString(keyvals[i])
 			fields = append(fields, zap.String(key, "<missing>"))
 		}
@@ -137,7 +417,7 @@ func (l *ZapLogger) parseKeyvals(keyvals ...interface{}) []zap.Field {
 	return fields
 }
 
-// toString 安全地将 interface{} 转换为 string
+// toString 安全转换为字符串
 func toString(v interface{}) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -145,70 +425,7 @@ func toString(v interface{}) string {
 	return "unknown"
 }
 
-// createZapLogger 创建配置好的 zap logger
-func createZapLogger(level LogLevel) *zap.Logger {
-	// Configure encoder
-	encoderConfig := zap.NewProductionEncoderConfig()
-	encoderConfig.TimeKey = "timestamp"
-	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
-	encoderConfig.MessageKey = "message"
-	encoderConfig.CallerKey = "caller"
-	// 使用完整的调用者编码器以获得更多信息
-	encoderConfig.EncodeCaller = zapcore.FullCallerEncoder
-
-	// Configure core
-	core := zapcore.NewCore(
-		zapcore.NewJSONEncoder(encoderConfig),
-		zapcore.AddSync(zapcore.Lock(zapcore.AddSync(zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout))))),
-		mapToZapLevel(level),
-	)
-
-	// Create logger with caller info - 调整 CallerSkip 数值
-	// 由于 Temporal 的包装，可能需要跳过更多层
-	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(3))
-
-	// Add temporal prefix to all logs
-	logger = logger.Named("temporal")
-
-	return logger
-}
-
-// createDevelopmentZapLogger 创建适合开发环境的 zap logger
-func createDevelopmentZapLogger(level LogLevel) *zap.Logger {
-	// Configure encoder for development (console output)
-	encoderConfig := zap.NewDevelopmentEncoderConfig()
-	encoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	// 使用完整的调用者编码器
-	encoderConfig.EncodeCaller = zapcore.FullCallerEncoder
-
-	// Configure core
-	core := zapcore.NewCore(
-		zapcore.NewConsoleEncoder(encoderConfig),
-		zapcore.AddSync(os.Stdout),
-		mapToZapLevel(level),
-	)
-
-	// Create logger - 调整 CallerSkip
-	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(3))
-	logger = logger.Named("temporal")
-
-	return logger
-}
-
-// NewDevelopmentLogger 创建适合开发环境的日志记录器
-func NewDevelopmentLogger(level string) log.Logger {
-	logLevel := parseLogLevel(level)
-	zapLogger := createDevelopmentZapLogger(logLevel)
-
-	return &ZapLogger{
-		logger: zapLogger,
-		level:  logLevel,
-	}
-}
-
-// mapToZapLevel 将我们的 LogLevel 转换为 zap Level
+// mapToZapLevel 转换日志级别
 func mapToZapLevel(level LogLevel) zapcore.Level {
 	switch level {
 	case LevelDebug:
@@ -224,7 +441,7 @@ func mapToZapLevel(level LogLevel) zapcore.Level {
 	}
 }
 
-// parseLogLevel 解析字符串级别的日志级别
+// parseLogLevel 解析日志级别
 func parseLogLevel(level string) LogLevel {
 	switch strings.ToLower(level) {
 	case "debug":
@@ -240,7 +457,7 @@ func parseLogLevel(level string) LogLevel {
 	}
 }
 
-// WithFields 创建一个带有附加字段的新日志记录器
+// WithFields 创建带附加字段的新日志记录器
 func (l *ZapLogger) WithFields(fields map[string]interface{}) log.Logger {
 	zapFields := make([]zap.Field, 0, len(fields))
 	for k, v := range fields {
@@ -254,133 +471,47 @@ func (l *ZapLogger) WithFields(fields map[string]interface{}) log.Logger {
 	}
 }
 
-// Sync 刷新任何缓冲的日志条目
-func (l *ZapLogger) Sync() error {
-	return l.logger.Sync()
+// 便捷方法
+
+// NewDevelopmentLogger 开发环境日志记录器
+func NewDevelopmentLogger(level string) log.Logger {
+	return NewLoggerWithConfig(LoggerConfig{
+		Level:      level,
+		WithIcon:   true,
+		WithColor:  true,
+		Format:     "console",
+		ShowCaller: true,
+	})
 }
 
-// GetZapLogger 返回底层的 zap logger，用于高级用法
-func (l *ZapLogger) GetZapLogger() *zap.Logger {
-	return l.logger
-}
-
-// SetLevel 更改日志级别
-func (l *ZapLogger) SetLevel(level string) {
-	l.level = parseLogLevel(level)
-}
-
-// IsDebugEnabled 如果启用了调试级别，则返回 true
-func (l *ZapLogger) IsDebugEnabled() bool {
-	return l.level <= LevelDebug
-}
-
-// IsInfoEnabled 如果启用了信息级别，则返回 true
-func (l *ZapLogger) IsInfoEnabled() bool {
-	return l.level <= LevelInfo
-}
-
-// Factory functions for common logger configurations
-
-// NewProductionLogger 创建生产就绪的日志记录器
+// NewProductionLogger 生产环境日志记录器
 func NewProductionLogger() log.Logger {
-	config := zap.NewProductionConfig()
-	config.OutputPaths = []string{"stdout"}
-	config.ErrorOutputPaths = []string{"stderr"}
-
-	// 配置调用者信息
-	config.EncoderConfig.CallerKey = "caller"
-	config.EncoderConfig.EncodeCaller = zapcore.FullCallerEncoder
-
-	logger, _ := config.Build(zap.AddCallerSkip(3)) // 调整跳过层数
-	logger = logger.Named("temporal")
-
-	return &ZapLogger{
-		logger: logger,
-		level:  LevelInfo,
-	}
+	return NewLoggerWithConfig(LoggerConfig{
+		Level:      "info",
+		WithIcon:   false,
+		WithColor:  false,
+		Format:     "json",
+		ShowCaller: true,
+	})
 }
 
-// NewFileLogger 创建一个写入文件的日志记录器
+// NewFileLogger 文件日志记录器
 func NewFileLogger(filepath string, level string) (log.Logger, error) {
 	config := zap.NewProductionConfig()
 	config.OutputPaths = []string{filepath}
-	config.ErrorOutputPaths = []string{filepath}
 	config.Level = zap.NewAtomicLevelAt(mapToZapLevel(parseLogLevel(level)))
 
-	// 配置调用者信息
+	config.EncoderConfig.EncodeTime = customTimeEncoder
 	config.EncoderConfig.CallerKey = "caller"
-	config.EncoderConfig.EncodeCaller = zapcore.FullCallerEncoder
+	config.EncoderConfig.EncodeCaller = customCallerEncoder(false)
 
-	logger, err := config.Build(zap.AddCallerSkip(3)) // 调整跳过层数
+	logger, err := config.Build(zap.AddCallerSkip(3))
 	if err != nil {
 		return nil, err
 	}
 
-	logger = logger.Named("temporal")
-
 	return &ZapLogger{
-		logger: logger,
+		logger: logger.Named("temporal"),
 		level:  parseLogLevel(level),
 	}, nil
-}
-
-// NewStructuredLogger 创建一个具有预定义结构字段的日志记录器
-func NewStructuredLogger(level string, fields map[string]interface{}) log.Logger {
-	baseLogger := NewLogger(level).(*ZapLogger)
-	return baseLogger.WithFields(fields)
-}
-
-// ErrorWithStack 记录错误并包含完整的调用栈
-func (l *ZapLogger) ErrorWithStack(msg string, err error, keyvals ...interface{}) {
-	if l.level <= LevelError {
-		fields := l.parseKeyvals(keyvals...)
-
-		// 添加错误信息
-		if err != nil {
-			fields = append(fields, zap.Error(err))
-		}
-
-		// 获取完整调用栈
-		fields = append(fields, l.getStackTrace())
-
-		l.logger.Error(msg, fields...)
-	}
-}
-
-// getStackTrace 获取完整的调用栈信息
-func (l *ZapLogger) getStackTrace() zap.Field {
-	const depth = 32
-	var pcs [depth]uintptr
-	n := runtime.Callers(3, pcs[:]) // 跳过 getStackTrace, ErrorWithStack, 和调用者
-
-	frames := runtime.CallersFrames(pcs[:n])
-	var stack []string
-
-	for {
-		frame, more := frames.Next()
-
-		// 过滤掉一些不需要的调用栈
-		if !strings.Contains(frame.Function, "runtime.") &&
-			!strings.Contains(frame.Function, "go.temporal.io") {
-			// 简化文件路径
-			file := frame.File
-			if idx := strings.LastIndex(file, "/"); idx != -1 {
-				file = file[idx+1:]
-			}
-
-			// 简化函数名
-			fn := frame.Function
-			if idx := strings.LastIndex(fn, "."); idx != -1 {
-				fn = fn[idx+1:]
-			}
-
-			stack = append(stack, fmt.Sprintf("%s:%d:%s", file, frame.Line, fn))
-		}
-
-		if !more {
-			break
-		}
-	}
-
-	return zap.Strings("stack", stack)
 }
