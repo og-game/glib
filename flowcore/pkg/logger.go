@@ -114,25 +114,25 @@ func customLevelEncoder(withIcon bool) zapcore.LevelEncoder {
 		switch level {
 		case zapcore.DebugLevel:
 			if withIcon {
-				levelStr = getColor(ColorCyanBold) + "🔍[DEBUG]" + getColor(ColorReset)
+				levelStr = getColor(ColorCyanBold) + "🔍 [DEBUG]" + getColor(ColorReset)
 			} else {
 				levelStr = "[DEBUG]"
 			}
 		case zapcore.InfoLevel:
 			if withIcon {
-				levelStr = getColor(ColorGreenBold) + "ℹ️[INFO]" + getColor(ColorReset)
+				levelStr = getColor(ColorGreenBold) + "ℹ️ [INFO]" + getColor(ColorReset)
 			} else {
 				levelStr = "[INFO] "
 			}
 		case zapcore.WarnLevel:
 			if withIcon {
-				levelStr = getColor(ColorYellowBold) + "⚠️[WARN]" + getColor(ColorReset)
+				levelStr = getColor(ColorYellowBold) + "⚠️ [WARN]" + getColor(ColorReset)
 			} else {
 				levelStr = "[WARN] "
 			}
 		case zapcore.ErrorLevel:
 			if withIcon {
-				levelStr = getColor(ColorRedBold) + "🚨[ERROR]" + getColor(ColorReset)
+				levelStr = getColor(ColorRedBold) + "🚨 [ERROR]" + getColor(ColorReset)
 			} else {
 				levelStr = "[ERROR]"
 			}
