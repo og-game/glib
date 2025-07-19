@@ -1,9 +1,7 @@
 package pkg
 
 import (
-	"fmt"
 	"os"
-	"runtime"
 	"strings"
 
 	"go.temporal.io/sdk/log"
@@ -50,8 +48,6 @@ func NewLoggerWithZap(zapLogger *zap.Logger, level string) log.Logger {
 func (l *ZapLogger) Debug(msg string, keyvals ...interface{}) {
 	if l.level <= LevelDebug {
 		fields := l.parseKeyvals(keyvals...)
-		// 添加调用者信息
-		fields = append(fields, l.getCallerField())
 		l.logger.Debug(msg, fields...)
 	}
 }
@@ -60,8 +56,6 @@ func (l *ZapLogger) Debug(msg string, keyvals ...interface{}) {
 func (l *ZapLogger) Info(msg string, keyvals ...interface{}) {
 	if l.level <= LevelInfo {
 		fields := l.parseKeyvals(keyvals...)
-		// 添加调用者信息
-		fields = append(fields, l.getCallerField())
 		l.logger.Info(msg, fields...)
 	}
 }
@@ -70,8 +64,6 @@ func (l *ZapLogger) Info(msg string, keyvals ...interface{}) {
 func (l *ZapLogger) Warn(msg string, keyvals ...interface{}) {
 	if l.level <= LevelWarn {
 		fields := l.parseKeyvals(keyvals...)
-		// 添加调用者信息
-		fields = append(fields, l.getCallerField())
 		l.logger.Warn(msg, fields...)
 	}
 }
@@ -80,38 +72,8 @@ func (l *ZapLogger) Warn(msg string, keyvals ...interface{}) {
 func (l *ZapLogger) Error(msg string, keyvals ...interface{}) {
 	if l.level <= LevelError {
 		fields := l.parseKeyvals(keyvals...)
-		// 添加调用者信息
-		fields = append(fields, l.getCallerField())
 		l.logger.Error(msg, fields...)
 	}
-}
-
-// getCallerField 获取真实的调用者信息
-func (l *ZapLogger) getCallerField() zap.Field {
-	// 跳过更多层调用栈来找到真实的调用者
-	// 通常需要跳过: getCallerField -> Error/Info/Debug/Warn -> temporal internal -> your code
-	pc, file, line, ok := runtime.Caller(4) // 尝试不同的层数
-	if !ok {
-		return zap.String("caller", "unknown")
-	}
-
-	// 获取函数名
-	fn := runtime.FuncForPC(pc)
-	funcName := "unknown"
-	if fn != nil {
-		funcName = fn.Name()
-		// 简化函数名，只保留最后部分
-		if idx := strings.LastIndex(funcName, "."); idx != -1 {
-			funcName = funcName[idx+1:]
-		}
-	}
-
-	// 简化文件路径，只保留相对路径
-	if idx := strings.LastIndex(file, "/"); idx != -1 {
-		file = file[idx+1:]
-	}
-
-	return zap.String("source", fmt.Sprintf("%s:%d:%s", file, line, funcName))
 }
 
 // parseKeyvals 将 keyvals 转换为 zap 字段
@@ -154,8 +116,7 @@ func createZapLogger(level LogLevel) *zap.Logger {
 	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
 	encoderConfig.MessageKey = "message"
 	encoderConfig.CallerKey = "caller"
-	// 使用完整的调用者编码器以获得更多信息
-	encoderConfig.EncodeCaller = zapcore.FullCallerEncoder
+	encoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
 
 	// Configure core
 	core := zapcore.NewCore(
@@ -164,9 +125,8 @@ func createZapLogger(level LogLevel) *zap.Logger {
 		mapToZapLevel(level),
 	)
 
-	// Create logger with caller info - 调整 CallerSkip 数值
-	// 由于 Temporal 的包装，可能需要跳过更多层
-	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(3))
+	// Create logger with caller info
+	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
 
 	// Add temporal prefix to all logs
 	logger = logger.Named("temporal")
@@ -180,8 +140,7 @@ func createDevelopmentZapLogger(level LogLevel) *zap.Logger {
 	encoderConfig := zap.NewDevelopmentEncoderConfig()
 	encoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	// 使用完整的调用者编码器
-	encoderConfig.EncodeCaller = zapcore.FullCallerEncoder
+	encoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
 
 	// Configure core
 	core := zapcore.NewCore(
@@ -190,8 +149,8 @@ func createDevelopmentZapLogger(level LogLevel) *zap.Logger {
 		mapToZapLevel(level),
 	)
 
-	// Create logger - 调整 CallerSkip
-	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(3))
+	// Create logger
+	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
 	logger = logger.Named("temporal")
 
 	return logger
@@ -287,11 +246,7 @@ func NewProductionLogger() log.Logger {
 	config.OutputPaths = []string{"stdout"}
 	config.ErrorOutputPaths = []string{"stderr"}
 
-	// 配置调用者信息
-	config.EncoderConfig.CallerKey = "caller"
-	config.EncoderConfig.EncodeCaller = zapcore.FullCallerEncoder
-
-	logger, _ := config.Build(zap.AddCallerSkip(3)) // 调整跳过层数
+	logger, _ := config.Build(zap.AddCallerSkip(1))
 	logger = logger.Named("temporal")
 
 	return &ZapLogger{
@@ -307,11 +262,7 @@ func NewFileLogger(filepath string, level string) (log.Logger, error) {
 	config.ErrorOutputPaths = []string{filepath}
 	config.Level = zap.NewAtomicLevelAt(mapToZapLevel(parseLogLevel(level)))
 
-	// 配置调用者信息
-	config.EncoderConfig.CallerKey = "caller"
-	config.EncoderConfig.EncodeCaller = zapcore.FullCallerEncoder
-
-	logger, err := config.Build(zap.AddCallerSkip(3)) // 调整跳过层数
+	logger, err := config.Build(zap.AddCallerSkip(1))
 	if err != nil {
 		return nil, err
 	}
@@ -328,59 +279,4 @@ func NewFileLogger(filepath string, level string) (log.Logger, error) {
 func NewStructuredLogger(level string, fields map[string]interface{}) log.Logger {
 	baseLogger := NewLogger(level).(*ZapLogger)
 	return baseLogger.WithFields(fields)
-}
-
-// ErrorWithStack 记录错误并包含完整的调用栈
-func (l *ZapLogger) ErrorWithStack(msg string, err error, keyvals ...interface{}) {
-	if l.level <= LevelError {
-		fields := l.parseKeyvals(keyvals...)
-
-		// 添加错误信息
-		if err != nil {
-			fields = append(fields, zap.Error(err))
-		}
-
-		// 获取完整调用栈
-		fields = append(fields, l.getStackTrace())
-
-		l.logger.Error(msg, fields...)
-	}
-}
-
-// getStackTrace 获取完整的调用栈信息
-func (l *ZapLogger) getStackTrace() zap.Field {
-	const depth = 32
-	var pcs [depth]uintptr
-	n := runtime.Callers(3, pcs[:]) // 跳过 getStackTrace, ErrorWithStack, 和调用者
-
-	frames := runtime.CallersFrames(pcs[:n])
-	var stack []string
-
-	for {
-		frame, more := frames.Next()
-
-		// 过滤掉一些不需要的调用栈
-		if !strings.Contains(frame.Function, "runtime.") &&
-			!strings.Contains(frame.Function, "go.temporal.io") {
-			// 简化文件路径
-			file := frame.File
-			if idx := strings.LastIndex(file, "/"); idx != -1 {
-				file = file[idx+1:]
-			}
-
-			// 简化函数名
-			fn := frame.Function
-			if idx := strings.LastIndex(fn, "."); idx != -1 {
-				fn = fn[idx+1:]
-			}
-
-			stack = append(stack, fmt.Sprintf("%s:%d:%s", file, frame.Line, fn))
-		}
-
-		if !more {
-			break
-		}
-	}
-
-	return zap.Strings("stack", stack)
 }
