@@ -8,7 +8,7 @@ type Pagination struct {
 	Rows          any   `json:"rows"`
 	Extend        any   `json:"extend,omitempty"`
 	TotalPage     int64 `json:"total_page"`
-	IsQueryTotal  bool  `json:"is_query_total"`  // 是否查询总数
+	NotQueryTotal bool  `json:"not_query_total"` // 是否不查询总数
 	ForcePageSize bool  `json:"force_page_size"` // 是否强制获取超出限制的条数
 }
 
