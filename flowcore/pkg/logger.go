@@ -386,11 +386,11 @@ func (l *ZapLogger) getCallerField() zap.Field {
 	relativePath := getRelativePath(file)
 
 	// 应用颜色：文件路径蓝色粗体，函数名紫色粗体
-	if enableColor {
-		fileStr := getColor(ColorBlueBold) + fmt.Sprintf("%s:%d", relativePath, line) + getColor(ColorReset)
-		funcStr := getColor(ColorMagentaBold) + funcName + getColor(ColorReset)
-		return zap.String("source", fmt.Sprintf("%s:%s", fileStr, funcStr))
-	}
+	//if enableColor {
+	//	fileStr := getColor(ColorBlueBold) + fmt.Sprintf("%s:%d", relativePath, line) + getColor(ColorReset)
+	//	funcStr := getColor(ColorMagentaBold) + funcName + getColor(ColorReset)
+	//	return zap.String("source", fmt.Sprintf("%s:%s", fileStr, funcStr))
+	//}
 
 	return zap.String("source", fmt.Sprintf("%s:%d:%s", relativePath, line, funcName))
 }
