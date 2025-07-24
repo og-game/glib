@@ -24,7 +24,7 @@ type (
 		MerchantUserID  string          `json:"merchant_user_id"` // 商户用户id
 		PlatformID      int64           `json:"platform_id"`      // 平台ID
 		GameID          int64           `json:"game_id"`          // 游戏ID
-		TransferType    int64           `json:"transfer_type"`    // 转账类型（对应 v1.TransactionType）
+		TransferType    int64           `json:"transfer_type"`    // 转账类型（对应 v1.AccountChangeType）
 		Amount          decimal.Decimal `json:"amount"`           // 金额
 		BalanceBefore   decimal.Decimal `json:"balance_before"`
 		BalanceAfter    decimal.Decimal `json:"balance_after"`
@@ -35,7 +35,6 @@ type (
 		TransactionID   string          `json:"transaction_id"`    // 交易ID
 		TradeTime       int64           `json:"trade_time"`        // 交易时间（hao毫秒）
 		Remark          string          `json:"remark"`            // 备注
-		Description     string          `json:"description"`       // 描述
 		ClientIP        string          `json:"client_ip"`         // 客户端IP
 		DeviceID        string          `json:"device_id"`         // 设备ID
 		DeviceOS        string          `json:"device_os"`         // 设备型号
