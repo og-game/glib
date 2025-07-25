@@ -2,13 +2,11 @@ package rocketmqx
 
 import (
 	"context"
-	"github.com/apache/rocketmq-clients/golang"
-	"github.com/apache/rocketmq-clients/golang/credentials"
-	v2 "github.com/apache/rocketmq-clients/golang/protocol/v2"
+	"github.com/apache/rocketmq-clients/golang/v5"
+	"github.com/apache/rocketmq-clients/golang/v5/credentials"
 	"github.com/og-game/glib/utils"
 	"github.com/zeromicro/go-zero/core/logx"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -95,10 +93,10 @@ func (r *RocketMqx) processMessages(consumer golang.SimpleConsumer, handler Pull
 
 		if err != nil {
 			cancel()
-			if strings.Contains(err.Error(), v2.Code_name[int32(v2.Code_MESSAGE_NOT_FOUND)]) {
-				time.Sleep(sleepTime)
-				continue
-			}
+			//if strings.Contains(err.Error(), v2.Code_name[int32(v2.Code_MESSAGE_NOT_FOUND)]) {
+			//	time.Sleep(sleepTime)
+			//	continue
+			//}
 			logx.Errorf("拉取消息失败，topic:%s,原因为:%s", topic, err.Error())
 			time.Sleep(sleepTime)
 			continue
