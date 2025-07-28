@@ -13,6 +13,7 @@ type (
 		MerchantUserID string `json:"merchant_user_id"`
 		DeviceID       string `json:"device_id"`
 		DeviceIp       string `json:"device_ip"`
+		CategoryCode   string `json:"category_code"`
 		DeviceOs       string `json:"device_os"`
 		StartPlayTime  int64  `json:"start_play_time"`
 	}
