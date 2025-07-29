@@ -12,12 +12,12 @@ import (
 	"log"
 )
 
-// Config 简化的配置结构
+// Config 配置结构
 type Config struct {
 	ServiceName    string  `json:",default=default-service"`
 	JaegerEndpoint string  `json:",optional"`
-	SamplingRate   float64 `json:",default=1.0"`
-	EnableStdout   bool    `json:",default=false"`
+	SamplingRate   float64 `json:",default=1.0"`   // 范围是0.0到1.0
+	EnableStdout   bool    `json:",default=false"` // 启用控制台输出
 }
 
 // Init 初始化OpenTelemetry（只在需要创建trace的服务中调用）
