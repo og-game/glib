@@ -2,7 +2,7 @@ package rocketmqx
 
 import (
 	"context"
-	"github.com/apache/rocketmq-clients/golang"
+	"github.com/apache/rocketmq-clients/golang/v5"
 )
 
 type Config struct {

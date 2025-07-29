@@ -2,9 +2,9 @@ package rocketmqx
 
 import (
 	"context"
-	"github.com/apache/rocketmq-clients/golang"
-	"github.com/apache/rocketmq-clients/golang/credentials"
-	v2 "github.com/apache/rocketmq-clients/golang/protocol/v2"
+	"github.com/apache/rocketmq-clients/golang/v5"
+	"github.com/apache/rocketmq-clients/golang/v5/credentials"
+	v2 "github.com/apache/rocketmq-clients/golang/v5/protocol/v2"
 	"github.com/og-game/glib/utils"
 	"github.com/zeromicro/go-zero/core/logx"
 	"os"
