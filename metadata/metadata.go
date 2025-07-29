@@ -2,10 +2,10 @@ package metadata
 
 import (
 	"context"
+	tracex "github.com/og-game/glib/trace"
 	"github.com/spf13/cast"
 	"github.com/zeromicro/go-zero/core/logx"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -87,14 +87,7 @@ func GetMerchantIDCurrencyCodeFromCtx(ctx context.Context) (merchantID int64, cu
 }
 
 func GetTraceFromCtx(ctx context.Context) (traceID, spanID string) {
-	spanCtx := trace.SpanContextFromContext(ctx)
-	if spanCtx.HasTraceID() {
-		traceID = spanCtx.TraceID().String()
-	}
-	if spanCtx.HasSpanID() {
-		spanID = spanCtx.SpanID().String()
-	}
-	return
+	return tracex.GetTraceIDFromCtx(ctx), tracex.GetSpanIDFromCtx(ctx)
 }
 
 // GetTraceLogger 获取带有trace信息的logger
