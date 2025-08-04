@@ -18,8 +18,8 @@ type (
 		StartPlayTime  int64  `json:"start_play_time"`
 	}
 
-	// UserTransferRecord 用户账变记录
-	UserTransferRecord struct {
+	// UserBalanceChangeRecord 用户账变记录
+	UserBalanceChangeRecord struct {
 		MerchantID      int64           `json:"merchant_id"`      // 商户ID
 		UserID          int64           `json:"user_id"`          // 用户ID
 		MerchantUserID  string          `json:"merchant_user_id"` // 商户用户id
