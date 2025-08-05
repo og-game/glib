@@ -22,7 +22,7 @@ const (
 
 func Init() {
 	flake = sonyflake.NewSonyflake(sonyflake.Settings{
-		StartTime: time.Now(),
+		StartTime: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		MachineID: getMachineID,
 	})
 }
