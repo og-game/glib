@@ -2,9 +2,10 @@ package metadata
 
 import (
 	"context"
+	tracex "github.com/og-game/glib/trace"
 	"github.com/spf13/cast"
 	"github.com/zeromicro/go-zero/core/logx"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/propagation"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -18,6 +19,13 @@ const (
 	CtxUserInfo       = "x-user-info"
 	CtxSkipTenant     = "x-skip-tenant" // 跳过租户条件的标记
 	CtxPlatformID     = "x-platform-id"
+	CtxTraceHeader    = "x-trace-id"
+	CtxSpanHeader     = "x-span-id"
+)
+
+var (
+	// OpenTelemetry propagator
+	propagator = propagation.TraceContext{}
 )
 
 // WithMetadata 上下文数据
@@ -29,6 +37,12 @@ func WithMerchantIDCurrencyCodeMetadata(ctx context.Context, merchantID int64, c
 	ctx = context.WithValue(ctx, CtxMerchantID, merchantID)
 	ctx = context.WithValue(ctx, CtxCurrencyCode, currencyCode)
 	ctx = context.WithValue(ctx, CtxCurrencyCode, currencyCode)
+	return ctx
+}
+
+func WithTrace(ctx context.Context, traceID, spanID string) context.Context {
+	ctx = context.WithValue(ctx, CtxTraceHeader, traceID)
+	ctx = context.WithValue(ctx, CtxSpanHeader, spanID)
 	return ctx
 }
 
@@ -72,12 +86,27 @@ func GetMerchantIDCurrencyCodeFromCtx(ctx context.Context) (merchantID int64, cu
 	return
 }
 
-func GetTraceIDFromCtx(ctx context.Context) string {
-	spanCtx := trace.SpanContextFromContext(ctx)
-	if spanCtx.HasTraceID() {
-		return spanCtx.TraceID().String()
+func GetTraceFromCtx(ctx context.Context) (traceID, spanID string) {
+	return tracex.GetTraceIDFromCtx(ctx), tracex.GetSpanIDFromCtx(ctx)
+}
+
+// GetTraceLogger 获取带有trace信息的logger
+func GetTraceLogger(ctx context.Context) logx.Logger {
+	logger := logx.WithContext(ctx)
+
+	traceID, spanID := GetTraceFromCtx(ctx)
+
+	if traceID != "" || spanID != "" {
+		fields := make([]logx.LogField, 0, 2)
+		if traceID != "" {
+			fields = append(fields, logx.Field("trace_id", traceID))
+		}
+		if spanID != "" {
+			fields = append(fields, logx.Field("span_id", spanID))
+		}
+		logger = logger.WithFields(fields...)
 	}
-	return ""
+	return logger
 }
 
 // WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata 设置商户ID 币种 商户用户id 到gRPC metadata
@@ -96,6 +125,31 @@ func WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx context.Context, me
 	md.Set(CtxMerchantID, cast.ToString(merchantID))
 	md.Set(CtxCurrencyCode, currencyCode)
 	md.Set(CtxMerchantUserID, merchantUserID)
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+// InjectTraceToGRPCMetadata 将OpenTelemetry trace信息注入到gRPC metadata中
+func InjectTraceToGRPCMetadata(ctx context.Context) context.Context {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		md = metadata.New(nil)
+	} else {
+		md = md.Copy()
+	}
+
+	// 使用OpenTelemetry的标准传播器注入trace信息
+	propagator.Inject(ctx, &metadataCarrier{md: md})
+
+	// 同时添加自定义的trace头部（用于兼容现有系统）
+	traceID, spanID := GetTraceFromCtx(ctx)
+
+	if traceID != "" {
+		md.Set(CtxTraceHeader, traceID)
+	}
+	if spanID != "" {
+		md.Set(CtxSpanHeader, spanID)
+	}
+
 	return metadata.NewOutgoingContext(ctx, md)
 }
 
@@ -143,6 +197,16 @@ func GetMerchantIDCurrencyCodeFromRpcMetadata(ctx context.Context) (merchantID i
 	return
 }
 
+// ExtractTraceFromGRPCMetadata 从gRPC metadata中提取OpenTelemetry trace信息
+func ExtractTraceFromGRPCMetadata(ctx context.Context) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+	// 使用OpenTelemetry的标准传播器提取trace信息
+	return propagator.Extract(ctx, &metadataCarrier{md: md})
+}
+
 // WithSkipTenant 跳过租户条件
 func WithSkipTenant(ctx context.Context) context.Context {
 	return context.WithValue(ctx, CtxSkipTenant, true)
@@ -154,4 +218,29 @@ func ShouldSkipTenant(ctx context.Context) bool {
 		return skip
 	}
 	return false
+}
+
+// metadataCarrier 实现OpenTelemetry的TextMapCarrier接口
+type metadataCarrier struct {
+	md metadata.MD
+}
+
+func (mc *metadataCarrier) Get(key string) string {
+	values := mc.md.Get(key)
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func (mc *metadataCarrier) Set(key, value string) {
+	mc.md.Set(key, value)
+}
+
+func (mc *metadataCarrier) Keys() []string {
+	var keys []string
+	for k := range mc.md {
+		keys = append(keys, k)
+	}
+	return keys
 }
