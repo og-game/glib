@@ -114,9 +114,9 @@ func GetTraceLogger(ctx context.Context) logx.Logger {
 
 // WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata 设置商户ID 币种 商户用户id 到gRPC metadata
 func WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx context.Context, merchantID int64, currencyCode, merchantUserID string) context.Context {
-	if merchantID <= 0 {
-		return ctx
-	}
+	//if merchantID <= 0 {
+	//	return ctx
+	//}
 
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {
