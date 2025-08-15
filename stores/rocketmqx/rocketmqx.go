@@ -35,8 +35,14 @@ func (r *RocketMqx) createBaseConfig() *golang.Config {
 	}
 }
 
-func (r *RocketMqx) NewProducer() (producer golang.Producer, err error) {
-	producer, err = golang.NewProducer(r.createBaseConfig())
+func (r *RocketMqx) NewProducer(options ...ProducerOption) (producer golang.Producer, err error) {
+
+	var rocketmqOpts []golang.ProducerOption
+	for _, opt := range options {
+		rocketmqOpts = opt(rocketmqOpts)
+	}
+
+	producer, err = golang.NewProducer(r.createBaseConfig(), rocketmqOpts...)
 	if err != nil {
 		logx.Errorf("NewProducer err: %s", err.Error())
 		return
@@ -129,5 +135,29 @@ func (r *RocketMqx) processMessages(consumer golang.SimpleConsumer, handler Pull
 			// 处理失败短暂休眠
 			time.Sleep(time.Second)
 		}
+	}
+}
+
+// ProducerOption 定义生产者选项
+type ProducerOption func([]golang.ProducerOption) []golang.ProducerOption
+
+// WithMaxAttempts 设置最大重试次数
+func WithMaxAttempts(attempts int32) ProducerOption {
+	return func(opts []golang.ProducerOption) []golang.ProducerOption {
+		return append(opts, golang.WithMaxAttempts(attempts))
+	}
+}
+
+// WithTopics 预声明主题
+func WithTopics(topics ...string) ProducerOption {
+	return func(opts []golang.ProducerOption) []golang.ProducerOption {
+		return append(opts, golang.WithTopics(topics...))
+	}
+}
+
+// WithTransactionChecker 设置事务检查器
+func WithTransactionChecker(checker *golang.TransactionChecker) ProducerOption {
+	return func(opts []golang.ProducerOption) []golang.ProducerOption {
+		return append(opts, golang.WithTransactionChecker(checker))
 	}
 }
