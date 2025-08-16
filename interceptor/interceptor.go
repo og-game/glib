@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/og-game/glib/metadata"
-	"go.opentelemetry.io/otel"
+	tracex "github.com/og-game/glib/trace"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc"
 )
-
-var tracer = otel.Tracer("grpc-interceptor")
 
 // ====== 服务端拦截器（只获取商户ID） ======
 
@@ -22,7 +20,7 @@ func ServerTenantInterceptor() grpc.UnaryServerInterceptor {
 		ctx = metadata.ExtractTraceFromGRPCMetadata(ctx)
 
 		// 开始一个新的span
-		ctx, span := tracer.Start(ctx, fmt.Sprintf("grpc.server.%s", info.FullMethod))
+		ctx, span := tracex.EnsureTraceContext(ctx, fmt.Sprintf("grpc.server.%s", info.FullMethod))
 		defer span.End()
 
 		// 从Metadata获取商户ID，如果没有就是0
@@ -42,7 +40,13 @@ func ServerTenantInterceptor() grpc.UnaryServerInterceptor {
 		ctx = metadata.WithMerchantIDCurrencyCodeMetadata(ctx, merchantID, currencyCode)
 		ctx = metadata.WithMerchantUserIDMetadata(ctx, merchantUserID)
 		// 继续处理
-		return handler(ctx, req)
+		resp, err := handler(ctx, req)
+		// 记录错误
+		if err != nil {
+			tracex.RecordError(span, err)
+		}
+
+		return resp, err
 	}
 }
 
@@ -58,7 +62,7 @@ func ServerTenantStreamInterceptor() grpc.StreamServerInterceptor {
 		ctx = metadata.ExtractTraceFromGRPCMetadata(ctx)
 
 		// 开始一个新的span
-		ctx, span := tracer.Start(ctx, fmt.Sprintf("grpc.server.stream.%s", info.FullMethod))
+		ctx, span := tracex.EnsureTraceContext(ctx, fmt.Sprintf("grpc.server.stream.%s", info.FullMethod))
 		defer span.End()
 
 		// 从Metadata获取商户ID，如果没有就是0
@@ -83,7 +87,13 @@ func ServerTenantStreamInterceptor() grpc.StreamServerInterceptor {
 			ctx:          ctx,
 		}
 
-		return handler(srv, wrappedStream)
+		err := handler(srv, wrappedStream)
+		// 记录错误
+		if err != nil {
+			tracex.RecordError(span, err)
+		}
+
+		return err
 	}
 }
 
@@ -105,7 +115,7 @@ func ClientTenantInterceptor() grpc.UnaryClientInterceptor {
 		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 
 		// 开始一个客户端span
-		ctx, span := tracer.Start(ctx, fmt.Sprintf("grpc.client.%s", method))
+		ctx, span := tracex.EnsureTraceContext(ctx, fmt.Sprintf("grpc.client.%s", method))
 		defer span.End()
 
 		// 从Context获取商户ID并写入Metadata（包括0值）
@@ -128,7 +138,13 @@ func ClientTenantInterceptor() grpc.UnaryClientInterceptor {
 		ctx = metadata.InjectTraceToGRPCMetadata(ctx)
 
 		// 继续调用
-		return invoker(ctx, method, req, reply, cc, opts...)
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		// 记录错误
+		if err != nil {
+			tracex.RecordError(span, err)
+		}
+
+		return err
 	}
 }
 
@@ -138,7 +154,7 @@ func ClientTenantStreamInterceptor() grpc.StreamClientInterceptor {
 		method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 
 		// 开始一个客户端流式span
-		ctx, span := tracer.Start(ctx, fmt.Sprintf("grpc.client.stream.%s", method))
+		ctx, span := tracex.EnsureTraceContext(ctx, fmt.Sprintf("grpc.client.stream.%s", method))
 		defer span.End()
 
 		// 从Context获取商户ID并写入Metadata
@@ -161,6 +177,12 @@ func ClientTenantStreamInterceptor() grpc.StreamClientInterceptor {
 		// 注入trace信息到gRPC metadata
 		ctx = metadata.InjectTraceToGRPCMetadata(ctx)
 
-		return streamer(ctx, desc, cc, method, opts...)
+		stream, err := streamer(ctx, desc, cc, method, opts...)
+		// 记录错误
+		if err != nil {
+			tracex.RecordError(span, err)
+		}
+
+		return stream, err
 	}
 }

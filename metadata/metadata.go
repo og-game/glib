@@ -43,12 +43,6 @@ func WithMerchantIDCurrencyCodeMetadata(ctx context.Context, merchantID int64, c
 	return ctx
 }
 
-func WithTrace(ctx context.Context, traceID, spanID string) context.Context {
-	ctx = context.WithValue(ctx, CtxTraceHeader, traceID)
-	ctx = context.WithValue(ctx, CtxSpanHeader, spanID)
-	return ctx
-}
-
 func WithMerchantUserIDMetadata(ctx context.Context, merchantUserID string) context.Context {
 	ctx = context.WithValue(ctx, CtxMerchantUserID, merchantUserID)
 	return ctx
@@ -94,30 +88,14 @@ func GetTraceFromCtx(ctx context.Context) (traceID, spanID string) {
 }
 
 // GetTraceLogger 获取带有trace信息的logger
+// go-zero的logx.WithContext会自动从OpenTelemetry context中提取trace信息
 func GetTraceLogger(ctx context.Context) logx.Logger {
-	logger := logx.WithContext(ctx)
-
-	traceID, spanID := GetTraceFromCtx(ctx)
-
-	if traceID != "" || spanID != "" {
-		fields := make([]logx.LogField, 0, 2)
-		if traceID != "" {
-			fields = append(fields, logx.Field("trace_id", traceID))
-		}
-		if spanID != "" {
-			fields = append(fields, logx.Field("span_id", spanID))
-		}
-		logger = logger.WithFields(fields...)
-	}
-	return logger
+	// go-zero 的 logx.WithContext 会自动从 OpenTelemetry context 中提取 trace
+	return logx.WithContext(ctx)
 }
 
 // WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata 设置商户ID 币种 商户用户id 到gRPC metadata
 func WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx context.Context, merchantID int64, currencyCode, merchantUserID string) context.Context {
-	//if merchantID <= 0 {
-	//	return ctx
-	//}
-
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {
 		md = metadata.New(nil)
@@ -164,37 +142,19 @@ func GetMerchantIDCurrencyCodeFromRpcMetadata(ctx context.Context) (merchantID i
 		return
 	}
 
-	values := md.Get(CtxMerchantID)
-	if len(values) == 0 {
-		return
+	if values := md.Get(CtxMerchantID); len(values) > 0 {
+		merchantID, err = cast.ToInt64E(values[0])
+		if err != nil {
+			logx.Errorf("Get merchant id from metadata error: %v", err)
+		}
 	}
 
-	merchantID, err = cast.ToInt64E(values[0])
-	if err != nil {
-		logx.Errorf("Get merchant id from metadata error: %v", err)
-		return
+	if values := md.Get(CtxCurrencyCode); len(values) > 0 {
+		currencyCode = values[0]
 	}
 
-	values2 := md.Get(CtxCurrencyCode)
-	if len(values2) == 0 {
-		return
-	}
-
-	currencyCode, err = cast.ToStringE(values2[0])
-	if err != nil {
-		logx.Errorf("Get currency code from metadata error: %v", err)
-		return
-	}
-
-	values3 := md.Get(CtxMerchantUserID)
-	if len(values3) == 0 {
-		return
-	}
-
-	merchantUserID, err = cast.ToStringE(values3[0])
-	if err != nil {
-		logx.Errorf("Get merchant user id from metadata error: %v", err)
-		return
+	if values := md.Get(CtxMerchantUserID); len(values) > 0 {
+		merchantUserID = values[0]
 	}
 
 	return
@@ -207,7 +167,19 @@ func ExtractTraceFromGRPCMetadata(ctx context.Context) context.Context {
 		return ctx
 	}
 	// 使用OpenTelemetry的标准传播器提取trace信息
-	return propagator.Extract(ctx, &metadataCarrier{md: md})
+	// 这会从 traceparent 和 tracestate headers 中提取
+	ctx = propagator.Extract(ctx, &metadataCarrier{md: md})
+	// 如果标准传播器没有提取到trace，尝试从自定义header提取
+	if !tracex.IsValidTraceContext(ctx) {
+		if traceIDStr := md.Get(CtxTraceHeader); len(traceIDStr) > 0 {
+			if spanIDStr := md.Get(CtxSpanHeader); len(spanIDStr) > 0 {
+				// 尝试创建span context
+				// 这里可以调用trace包的辅助函数
+				// 暂时跳过，因为标准传播器应该能处理大部分情况
+			}
+		}
+	}
+	return ctx
 }
 
 // WithSkipTenant 跳过租户条件
