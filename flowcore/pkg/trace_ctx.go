@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"github.com/zeromicro/go-zero/core/jsonx"
 	"time"
 
 	"github.com/og-game/glib/metadata"
@@ -344,6 +345,54 @@ func ExtractContextFromMemo(memo *commonpb.Memo) *ContextData {
 	}
 
 	return contextData
+}
+
+// BuildMemoMapFromContextData 从 ContextData 构建 Memo 的字符串映射
+// 返回一个 map[string]string，用于构建 Memo
+func BuildMemoMapFromContextData(data *ContextData) map[string]string {
+	if data == nil {
+		return make(map[string]string)
+	}
+
+	memoMap := make(map[string]string)
+
+	// 添加 trace 信息
+	if data.TraceID != "" {
+		memoMap[metadata.CtxTraceHeader] = data.TraceID
+	}
+	if data.SpanID != "" {
+		memoMap[metadata.CtxSpanHeader] = data.SpanID
+	}
+
+	// 添加商户信息
+	if data.MerchantID > 0 {
+		memoMap[metadata.CtxMerchantID] = cast.ToString(data.MerchantID)
+	}
+	if data.CurrencyCode != "" {
+		memoMap[metadata.CtxCurrencyCode] = data.CurrencyCode
+	}
+	if data.MerchantUserID != "" {
+		memoMap[metadata.CtxMerchantUserID] = data.MerchantUserID
+	}
+
+	// 添加用户信息
+	if data.UserID > 0 {
+		memoMap[metadata.CtxUserID] = cast.ToString(data.UserID)
+	}
+
+	// 添加 Baggage 信息
+	if len(data.Baggage) > 0 {
+		if baggageJSON, err := jsonx.Marshal(data.Baggage); err == nil {
+			memoMap[metadata.CtxBaggageInfo] = string(baggageJSON)
+		}
+	}
+
+	// 添加时间戳
+	if !data.Timestamp.IsZero() {
+		memoMap["timestamp"] = data.Timestamp.Format(time.RFC3339)
+	}
+
+	return memoMap
 }
 
 // BuildMemoFromContext 从 ContextData 构建 Memo
