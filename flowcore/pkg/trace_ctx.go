@@ -57,10 +57,9 @@ func NewContextData() *ContextData {
 }
 
 // WithTraceInfo 设置追踪信息
-func (c *ContextData) WithTraceInfo(traceID, spanID, parentSpanID string) *ContextData {
+func (c *ContextData) WithTraceInfo(traceID, spanID string) *ContextData {
 	c.TraceID = traceID
 	c.SpanID = spanID
-	c.ParentSpanID = parentSpanID
 	return c
 }
 
@@ -105,7 +104,6 @@ func (c *ContextData) Clone() *ContextData {
 	cloned := &ContextData{
 		TraceID:        c.TraceID,
 		SpanID:         c.SpanID,
-		ParentSpanID:   c.ParentSpanID,
 		MerchantID:     c.MerchantID,
 		CurrencyCode:   c.CurrencyCode,
 		MerchantUserID: c.MerchantUserID,
