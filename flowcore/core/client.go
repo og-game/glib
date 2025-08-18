@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/og-game/glib/flowcore/config"
-	"github.com/og-game/glib/flowcore/pkg"
+	"github.com/og-game/glib/flowcore/logger"
 	"go.temporal.io/sdk/log"
 	"os"
 	"sync"
@@ -81,9 +81,9 @@ func NewClient(ctx context.Context, cfg *config.Config) (client.Client, error) {
 
 	// Configure zap logger based on environment
 	if os.Getenv("ENV") == "production" {
-		options.Logger = pkg.NewProductionLogger()
+		options.Logger = logger.NewProductionLogger()
 	} else {
-		options.Logger = pkg.NewDevelopmentLogger("info")
+		options.Logger = logger.NewDevelopmentLogger("info")
 	}
 
 	return client.DialContext(ctx, options)
