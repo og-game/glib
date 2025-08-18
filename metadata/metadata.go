@@ -21,6 +21,7 @@ const (
 	CtxPlatformID     = "x-platform-id"
 	CtxTraceHeader    = "x-trace-id"
 	CtxSpanHeader     = "x-span-id"
+	CtxBaggageInfo    = "x-baggage"
 )
 
 var (
