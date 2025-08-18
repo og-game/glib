@@ -31,9 +31,8 @@ const (
 // ContextData 在 Workflow 和 Activity 之间传递的完整上下文数据
 type ContextData struct {
 	// 追踪信息
-	TraceID      string `json:"trace_id,omitempty"`
-	SpanID       string `json:"span_id,omitempty"`
-	ParentSpanID string `json:"parent_span_id,omitempty"`
+	TraceID string `json:"trace_id,omitempty"`
+	SpanID  string `json:"span_id,omitempty"`
 
 	// 业务信息
 	MerchantID     int64  `json:"merchant_id,omitempty"`
