@@ -16,7 +16,7 @@ import (
 
 var (
 	initialized bool           // 标记 SDK 是否已初始化
-	mu          sync.Mutex     // 互斥锁，用于保护 initialized 变量的并发访问
+	mu          sync.RWMutex   // 互斥锁，用于保护 initialized 变量的并发访问
 	sdkConfig   *config.Config // 存储 SDK 的配置
 )
 
@@ -63,6 +63,8 @@ func MustInitialize(ctx context.Context, cfg *config.Config) {
 
 // Client 返回默认的 Temporal 客户端实例
 func Client(ctx context.Context) tclient.Client {
+	mu.RLock()
+	defer mu.RUnlock()
 	if !initialized {
 		panic("temporal SDK not initialized - call Initialize() first") // 如果未初始化，触发 panic
 	}
@@ -90,6 +92,9 @@ func RegisterModule(module core.Module) {
 
 // NewWorker 创建一个新的工作者 (Worker)
 func NewWorker(ctx context.Context, cfg *config.WorkerConfig) *core.Worker {
+	mu.RLock()
+	defer mu.RUnlock()
+
 	if !initialized {
 		panic("temporal SDK not initialized - call Initialize() first") // 如果未初始化，触发 panic
 	}
@@ -106,6 +111,8 @@ func NewWorker(ctx context.Context, cfg *config.WorkerConfig) *core.Worker {
 
 // StartWorkers 启动所有工作者
 func StartWorkers(ctx context.Context) error {
+	mu.RLock()
+	defer mu.RUnlock()
 	if !initialized {
 		return fmt.Errorf("temporal SDK not initialized") // 如果未初始化，返回错误
 	}
@@ -119,12 +126,12 @@ func StopWorkers() {
 
 // Shutdown 关闭 SDK
 func Shutdown() {
-	StopWorkers()                                 // 停止所有工作者
-	core.CloseAll()                               // 关闭所有客户端连接
-	mu.Lock()                                     // 获取锁
-	initialized = false                           // 标记 SDK 为未初始化
-	mu.Unlock()                                   // 释放锁
-	fmt.Println("Temporal SDK shutdown complete") // 打印关闭完成信息
+	mu.Lock()
+	defer mu.Unlock()
+
+	core.StopAll()
+	core.CloseAll()
+	initialized = false
 }
 
 // IsInitialized 返回 SDK 是否已初始化
@@ -141,6 +148,9 @@ func GetRetryPolicy(name string) *temporal.RetryPolicy {
 
 // WorkflowOptions 创建标准的工作流选项
 func WorkflowOptions(workflowID, taskQueue string) tclient.StartWorkflowOptions {
+	mu.RLock()
+	defer mu.RUnlock()
+
 	if !initialized {
 		panic("temporal SDK not initialized") // 如果未初始化，触发 panic
 	}
@@ -163,6 +173,9 @@ func WorkflowOptionsWithRetry(workflowID, taskQueue string, retryPolicy *tempora
 
 // ActivityOptions 创建标准的活动选项
 func ActivityOptions(options ...core.ActivityOption) workflow.ActivityOptions {
+	mu.RLock()
+	defer mu.RUnlock()
+
 	if !initialized {
 		panic("temporal SDK not initialized") // 如果未初始化，触发 panic
 	}
