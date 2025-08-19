@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/og-game/glib/flowcore/config"
 	flowcoreinterceptor "github.com/og-game/glib/flowcore/interceptor"
+	flowcorepkg "github.com/og-game/glib/flowcore/pkg"
 	sdkinterceptor "go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
 	"sync"
@@ -16,16 +17,7 @@ import (
 	sdkworkflow "go.temporal.io/sdk/workflow"
 )
 
-// Worker 包含了一个 Temporal worker
-type Worker struct {
-	worker      worker.Worker
-	config      *config.WorkerConfig
-	client      client.Client
-	interceptor *flowcoreinterceptor.UnifiedInterceptor // 统一拦截器实例
-	startTime   time.Time                               // 启动时间
-	status      WorkerStatus                            // 工作状态
-	mu          sync.RWMutex
-}
+// ========================= Worker 状态定义 =========================
 
 // WorkerStatus 工作器状态
 type WorkerStatus int
@@ -37,59 +29,56 @@ const (
 	WorkerStatusError                       // 错误
 )
 
-// Manager 管理多个 workers
-type Manager struct {
-	mu                sync.RWMutex
-	workers           []*Worker
-	workersByQueue    map[string]*Worker // 按任务队列索引
-	running           bool
-	metricsAggregator *MetricsAggregator // 指标聚合器
+// String 返回状态的字符串表示
+func (s WorkerStatus) String() string {
+	switch s {
+	case WorkerStatusIdle:
+		return "idle"
+	case WorkerStatusRunning:
+		return "running"
+	case WorkerStatusStopped:
+		return "stopped"
+	case WorkerStatusError:
+		return "error"
+	default:
+		return "unknown"
+	}
 }
 
-// MetricsAggregator 指标聚合器
-type MetricsAggregator struct {
-	mu           sync.RWMutex
-	stopChan     chan struct{}
-	interval     time.Duration
-	logger       log.Logger
-	enableReport bool
-}
+// ========================= Worker 结构 =========================
 
-var globalManager = &Manager{
-	workers:        make([]*Worker, 0),
-	workersByQueue: make(map[string]*Worker),
-	metricsAggregator: &MetricsAggregator{
-		interval:     5 * time.Minute,
-		stopChan:     make(chan struct{}),
-		enableReport: true,
-	},
+// Worker 包含了一个 Temporal worker
+type Worker struct {
+	worker      worker.Worker
+	config      *config.WorkerConfig
+	client      client.Client
+	interceptor *flowcoreinterceptor.UnifiedInterceptor
+	startTime   time.Time
+	status      WorkerStatus
+	mu          sync.RWMutex
 }
 
 // WorkerOptions worker 配置选项
 type WorkerOptions struct {
-	EnableTrace           bool                   // 启用 trace
-	EnableMetrics         bool                   // 启用指标收集
-	EnableDetailedMetrics bool                   // 启用详细指标
-	MetricsInterval       time.Duration          // 指标上报间隔
-	Logger                log.Logger             // 自定义日志器
-	CustomAttributes      map[string]string      // 自定义属性
-	OnError               func(error)            // 错误回调
-	OnMetrics             func(map[string]int64) // 指标回调
+	EnableTrace      bool              // 启用 trace
+	EnableMetrics    bool              // 启用指标收集
+	Logger           log.Logger        // 自定义日志器
+	CustomAttributes map[string]string // 自定义属性
+	OnError          func(error)       // 错误回调
 }
 
 // DefaultWorkerOptions 默认配置
 func DefaultWorkerOptions() *WorkerOptions {
 	return &WorkerOptions{
-		EnableTrace:           true,
-		EnableMetrics:         true,
-		EnableDetailedMetrics: false,
-		MetricsInterval:       5 * time.Minute,
-		Logger:                nil, // 将使用默认 logger
-		CustomAttributes:      make(map[string]string),
+		EnableTrace:      true,
+		EnableMetrics:    true,
+		CustomAttributes: make(map[string]string),
 	}
 }
 
-// NewWorker 创建一个新的 worker
+// ========================= Worker 创建 =========================
+
+// NewWorker 创建一个新的 worker（使用默认选项）
 func NewWorker(c client.Client, cfg *config.WorkerConfig) *Worker {
 	return NewWorkerWithOptions(c, cfg, DefaultWorkerOptions())
 }
@@ -102,18 +91,24 @@ func NewWorkerWithOptions(c client.Client, cfg *config.WorkerConfig, opts *Worke
 
 	// 创建统一拦截器配置
 	interceptorConfig := &flowcoreinterceptor.Config{
-		EnableTrace:           opts.EnableTrace,
-		EnableMetrics:         opts.EnableMetrics,
-		EnableDetailedMetrics: opts.EnableDetailedMetrics,
-		MetricsInterval:       opts.MetricsInterval,
-		Logger:                opts.Logger,
-		CustomAttributes:      opts.CustomAttributes,
+		EnableTrace:      opts.EnableTrace,
+		EnableMetrics:    opts.EnableMetrics,
+		Logger:           opts.Logger,
+		CustomAttributes: opts.CustomAttributes,
 	}
+
+	// 创建 Worker
+	return createWorker(c, cfg, interceptorConfig, opts)
+}
+
+// createWorker 内部创建 worker 的方法
+func createWorker(c client.Client, cfg *config.WorkerConfig, interceptorConfig *flowcoreinterceptor.Config, opts *WorkerOptions) *Worker {
+
 	// 创建统一拦截器
 	unifiedInterceptor := flowcoreinterceptor.NewUnifiedInterceptor(interceptorConfig).(*flowcoreinterceptor.UnifiedInterceptor)
 
-	// Worker 选项
-	options := worker.Options{
+	// 构建 Worker 选项
+	workerOptions := worker.Options{
 		MaxConcurrentActivityExecutionSize:     cfg.MaxConcurrentActivities,
 		MaxConcurrentWorkflowTaskExecutionSize: cfg.MaxConcurrentWorkflows,
 		EnableSessionWorker:                    cfg.EnableSessionWorker,
@@ -123,12 +118,13 @@ func NewWorkerWithOptions(c client.Client, cfg *config.WorkerConfig, opts *Worke
 		},
 	}
 
-	// 如果有错误回调，设置到选项中
-	if opts.OnError != nil {
-		options.OnFatalError = opts.OnError
+	// 设置错误回调
+	if opts != nil && opts.OnError != nil {
+		workerOptions.OnFatalError = opts.OnError
 	}
 
-	w := worker.New(c, cfg.TaskQueue, options)
+	// 创建 SDK Worker
+	w := worker.New(c, cfg.TaskQueue, workerOptions)
 
 	return &Worker{
 		worker:      w,
@@ -138,6 +134,8 @@ func NewWorkerWithOptions(c client.Client, cfg *config.WorkerConfig, opts *Worke
 		status:      WorkerStatusIdle,
 	}
 }
+
+// ========================= Worker 注册方法 =========================
 
 // RegisterWorkflow 注册一个工作流
 func (w *Worker) RegisterWorkflow(workflow interface{}) {
@@ -161,6 +159,8 @@ func (w *Worker) RegisterActivityWithOptions(activity interface{}, options sdkac
 	w.worker.RegisterActivityWithOptions(activity, options)
 }
 
+// ========================= Worker 生命周期管理 =========================
+
 // Start 启动 worker
 func (w *Worker) Start(ctx context.Context) error {
 	w.mu.Lock()
@@ -170,26 +170,26 @@ func (w *Worker) Start(ctx context.Context) error {
 		return fmt.Errorf("worker already running for task queue: %s", w.config.TaskQueue)
 	}
 
-	go func() {
-		w.mu.Lock()
-		w.status = WorkerStatusRunning
-		w.startTime = time.Now()
-		w.mu.Unlock()
-
-		fmt.Printf("Starting worker for task queue: %s\n", w.config.TaskQueue)
-		err := w.worker.Run(worker.InterruptCh())
-
-		w.mu.Lock()
-		if err != nil {
-			w.status = WorkerStatusError
-			fmt.Printf("Worker error for task queue %s: %v\n", w.config.TaskQueue, err)
-		} else {
-			w.status = WorkerStatusStopped
-		}
-		w.mu.Unlock()
-	}()
+	// 在 goroutine 中运行 worker
+	go w.run()
 
 	return nil
+}
+
+// run 内部运行方法
+func (w *Worker) run() {
+	w.setStatus(WorkerStatusRunning)
+	w.startTime = time.Now()
+
+	fmt.Printf("Starting worker for task queue: %s\n", w.config.TaskQueue)
+	err := w.worker.Run(worker.InterruptCh())
+
+	if err != nil {
+		w.setStatus(WorkerStatusError)
+		fmt.Printf("Worker error for task queue %s: %v\n", w.config.TaskQueue, err)
+	} else {
+		w.setStatus(WorkerStatusStopped)
+	}
 }
 
 // Stop 停止 worker
@@ -204,13 +204,17 @@ func (w *Worker) Stop() {
 	w.worker.Stop()
 	w.status = WorkerStatusStopped
 
-	// 停止拦截器
-	if w.interceptor != nil {
-		w.interceptor.Stop()
-	}
-
 	fmt.Printf("Worker stopped for task queue: %s\n", w.config.TaskQueue)
 }
+
+// setStatus 线程安全地设置状态
+func (w *Worker) setStatus(status WorkerStatus) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.status = status
+}
+
+// ========================= Worker 信息获取 =========================
 
 // GetTaskQueue 返回任务队列名称
 func (w *Worker) GetTaskQueue() string {
@@ -244,18 +248,12 @@ func (w *Worker) GetMetrics() map[string]int64 {
 }
 
 // GetDetailedMetrics 获取详细指标
-func (w *Worker) GetDetailedMetrics() (map[string]*flowcoreinterceptor.ActivityMetric, map[string]*flowcoreinterceptor.WorkflowMetric) {
+func (w *Worker) GetDetailedMetrics() (map[string]*flowcorepkg.ExecutionMetric, map[string]*flowcorepkg.ExecutionMetric) {
 	if w.interceptor != nil {
 		return w.interceptor.GetDetailedMetrics()
 	}
 	return nil, nil
-}
 
-// ResetMetrics 重置当前 worker 的指标
-func (w *Worker) ResetMetrics() {
-	if w.interceptor != nil {
-		w.interceptor.ResetMetrics()
-	}
 }
 
 // GetInfo 获取 Worker 信息
@@ -272,8 +270,8 @@ func (w *Worker) GetInfo() WorkerInfo {
 		MaxConcurrentWorkflows:  w.config.MaxConcurrentWorkflows,
 	}
 
-	if w.interceptor != nil {
-		metrics := w.interceptor.GetMetrics()
+	// 获取指标信息
+	if metrics := w.GetMetrics(); metrics != nil {
 		info.ActivityCount = metrics["activities"]
 		info.WorkflowCount = metrics["workflows"]
 		info.ErrorCount = metrics["errors"]
@@ -295,35 +293,47 @@ type WorkerInfo struct {
 	ErrorCount              int64
 }
 
-// ========================= Manager 方法 =========================
+// ========================= Worker 管理器 =========================
+
+// Manager 管理多个 workers
+type Manager struct {
+	mu             sync.RWMutex
+	workers        []*Worker
+	workersByQueue map[string]*Worker // 按任务队列索引
+	running        bool
+}
+
+// 全局管理器实例
+var globalManager = &Manager{
+	workers:        make([]*Worker, 0),
+	workersByQueue: make(map[string]*Worker),
+}
 
 // AddWorker 将 worker 添加到全局管理器
-func AddWorker(w *Worker) {
+func AddWorker(w *Worker) error {
 	globalManager.mu.Lock()
 	defer globalManager.mu.Unlock()
 
 	// 检查是否已存在相同任务队列的 worker
 	if _, exists := globalManager.workersByQueue[w.config.TaskQueue]; exists {
-		fmt.Printf("worker already exists for task queue: %s\n", w.config.TaskQueue)
-		return
+		return fmt.Errorf("worker already exists for task queue: %s", w.config.TaskQueue)
 	}
 
 	globalManager.workers = append(globalManager.workers, w)
 	globalManager.workersByQueue[w.config.TaskQueue] = w
 
 	fmt.Printf("Added worker for task queue: %s\n", w.config.TaskQueue)
-	return
+	return nil
 }
 
 // RemoveWorker 从管理器中移除 worker
-func RemoveWorker(taskQueue string) {
+func RemoveWorker(taskQueue string) error {
 	globalManager.mu.Lock()
 	defer globalManager.mu.Unlock()
 
 	_worker, exists := globalManager.workersByQueue[taskQueue]
 	if !exists {
-		fmt.Printf("worker not found for task queue: %s\n", taskQueue)
-		return
+		return fmt.Errorf("worker not found for task queue: %s", taskQueue)
 	}
 
 	// 停止 worker
@@ -341,7 +351,7 @@ func RemoveWorker(taskQueue string) {
 	delete(globalManager.workersByQueue, taskQueue)
 
 	fmt.Printf("Removed worker for task queue: %s\n", taskQueue)
-	return
+	return nil
 }
 
 // StartAll 启动所有 workers
@@ -353,6 +363,11 @@ func StartAll(ctx context.Context) error {
 		return fmt.Errorf("workers already running")
 	}
 
+	return startWorkers(ctx)
+}
+
+// startWorkers 内部启动 workers 的方法
+func startWorkers(ctx context.Context) error {
 	fmt.Printf("Starting %d workers\n", len(globalManager.workers))
 
 	var firstErr error
@@ -371,11 +386,6 @@ func StartAll(ctx context.Context) error {
 
 	if successCount > 0 {
 		globalManager.running = true
-
-		// 启动指标聚合器
-		if globalManager.metricsAggregator.enableReport {
-			globalManager.metricsAggregator.Start()
-		}
 	}
 
 	if firstErr != nil {
@@ -395,10 +405,13 @@ func StopAll() {
 		return
 	}
 
-	// 停止指标聚合器
-	globalManager.metricsAggregator.Stop()
+	stopWorkers()
+}
 
+// stopWorkers 内部停止 workers 的方法
+func stopWorkers() {
 	fmt.Printf("Stopping %d workers\n", len(globalManager.workers))
+
 	for _, w := range globalManager.workers {
 		w.Stop()
 	}
@@ -406,6 +419,8 @@ func StopAll() {
 	globalManager.running = false
 	fmt.Println("All workers stopped")
 }
+
+// ========================= Worker 查询方法 =========================
 
 // GetWorkerCount 返回已注册的 worker 数量
 func GetWorkerCount() int {
@@ -435,6 +450,13 @@ func IsRunning() bool {
 	return globalManager.running
 }
 
+// GetWorkerByTaskQueue 根据任务队列名称获取 worker
+func GetWorkerByTaskQueue(taskQueue string) *Worker {
+	globalManager.mu.RLock()
+	defer globalManager.mu.RUnlock()
+	return globalManager.workersByQueue[taskQueue]
+}
+
 // GetWorkersInfo 获取所有 workers 的信息
 func GetWorkersInfo() []WorkerInfo {
 	globalManager.mu.RLock()
@@ -447,129 +469,33 @@ func GetWorkersInfo() []WorkerInfo {
 	return infos
 }
 
+// ========================= 指标相关方法 =========================
+
 // GetAllMetrics 获取所有 workers 的合并指标
 func GetAllMetrics() map[string]int64 {
 	globalManager.mu.RLock()
 	defer globalManager.mu.RUnlock()
 
 	totalMetrics := map[string]int64{
-		"total_workers":         int64(len(globalManager.workers)),
-		"running_workers":       0,
-		"activities":            0,
-		"workflows":             0,
-		"errors":                0,
-		"activity_success":      0,
-		"activity_failure":      0,
-		"workflow_success":      0,
-		"workflow_failure":      0,
-		"activity_duration_ms":  0,
-		"workflow_duration_ms":  0,
-		"concurrent_activities": 0,
-		"concurrent_workflows":  0,
+		"total_workers":   int64(len(globalManager.workers)),
+		"running_workers": 0,
 	}
 
+	// 计算运行中的 workers
 	for _, w := range globalManager.workers {
 		if w.GetStatus() == WorkerStatusRunning {
 			totalMetrics["running_workers"]++
 		}
+	}
 
-		if metrics := w.GetMetrics(); metrics != nil {
+	// 获取并合并指标（使用全局收集器，所以直接获取一次即可）
+	if len(globalManager.workers) > 0 {
+		if metrics := globalManager.workers[0].GetMetrics(); metrics != nil {
 			for key, value := range metrics {
-				totalMetrics[key] += value
+				totalMetrics[key] = value
 			}
 		}
 	}
 
 	return totalMetrics
-}
-
-// ResetAllMetrics 重置所有 workers 的指标
-func ResetAllMetrics() {
-	globalManager.mu.Lock()
-	defer globalManager.mu.Unlock()
-
-	for _, w := range globalManager.workers {
-		w.ResetMetrics()
-	}
-}
-
-// GetWorkerByTaskQueue 根据任务队列名称获取 worker
-func GetWorkerByTaskQueue(taskQueue string) *Worker {
-	globalManager.mu.RLock()
-	defer globalManager.mu.RUnlock()
-
-	return globalManager.workersByQueue[taskQueue]
-}
-
-// SetMetricsAggregator 设置指标聚合器
-func SetMetricsAggregator(aggregator *MetricsAggregator) {
-	globalManager.mu.Lock()
-	defer globalManager.mu.Unlock()
-
-	if globalManager.metricsAggregator != nil {
-		globalManager.metricsAggregator.Stop()
-	}
-
-	globalManager.metricsAggregator = aggregator
-}
-
-// ========================= MetricsAggregator 方法 =========================
-
-// Start 启动指标聚合器
-func (m *MetricsAggregator) Start() {
-	if m.logger == nil {
-		return
-	}
-
-	go func() {
-		ticker := time.NewTicker(m.interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				m.reportAggregatedMetrics()
-			case <-m.stopChan:
-				return
-			}
-		}
-	}()
-}
-
-// Stop 停止指标聚合器
-func (m *MetricsAggregator) Stop() {
-	select {
-	case <-m.stopChan:
-		// 已经关闭
-	default:
-		close(m.stopChan)
-	}
-}
-
-// reportAggregatedMetrics 上报聚合指标
-func (m *MetricsAggregator) reportAggregatedMetrics() {
-	metrics := GetAllMetrics()
-
-	if m.logger != nil {
-		m.logger.Info("Temporal Workers Metrics Report",
-			"total_workers", metrics["total_workers"],
-			"running_workers", metrics["running_workers"],
-			"total_activities", metrics["activities"],
-			"total_workflows", metrics["workflows"],
-			"total_errors", metrics["errors"],
-			"activity_success_rate", calculateSuccessRate(metrics["activity_success"], metrics["activity_failure"]),
-			"workflow_success_rate", calculateSuccessRate(metrics["workflow_success"], metrics["workflow_failure"]),
-			"concurrent_activities", metrics["concurrent_activities"],
-			"concurrent_workflows", metrics["concurrent_workflows"],
-		)
-	}
-}
-
-// calculateSuccessRate 计算成功率
-func calculateSuccessRate(success, failure int64) float64 {
-	total := success + failure
-	if total == 0 {
-		return 0
-	}
-	return float64(success) / float64(total) * 100
 }
