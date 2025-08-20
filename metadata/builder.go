@@ -21,6 +21,13 @@ type ContextBuilder struct {
 	customValues   map[interface{}]interface{}
 }
 
+// NewBuilder 创建一个全新的 builder（不需要原始 context）
+func NewBuilder() *ContextBuilder {
+	return &ContextBuilder{
+		customValues: make(map[interface{}]interface{}),
+	}
+}
+
 // NewContextBuilder 从现有 context 创建 builder
 func NewContextBuilder(ctx context.Context) *ContextBuilder {
 	builder := &ContextBuilder{
@@ -189,4 +196,14 @@ func AsyncContext(ctx context.Context) (context.Context, context.CancelFunc) {
 // AsyncContextWithTimeout 为异步操作创建带自定义超时的 context
 func AsyncContextWithTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	return CopyContextWithTimeout(ctx, timeout)
+}
+
+// BuildBackgroundCtxWithTimeout 快速创建带超时的 context
+func BuildBackgroundCtxWithTimeout(timeout time.Duration) (context.Context, context.CancelFunc) {
+	return NewBuilder().BuildWithTimeout(timeout)
+}
+
+// BuildBackgroundCtx 创 background context
+func BuildBackgroundCtx() context.Context {
+	return NewBuilder().Build()
 }

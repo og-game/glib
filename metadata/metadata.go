@@ -89,9 +89,7 @@ func GetTraceFromCtx(ctx context.Context) (traceID, spanID string) {
 }
 
 // GetTraceLogger 获取带有trace信息的logger
-// go-zero的logx.WithContext会自动从OpenTelemetry context中提取trace信息
 func GetTraceLogger(ctx context.Context) logx.Logger {
-	// go-zero 的 logx.WithContext 会自动从 OpenTelemetry context 中提取 trace
 	return logx.WithContext(ctx)
 }
 
@@ -167,19 +165,32 @@ func ExtractTraceFromGRPCMetadata(ctx context.Context) context.Context {
 	if !ok {
 		return ctx
 	}
-	// 使用OpenTelemetry的标准传播器提取trace信息
-	// 这会从 traceparent 和 tracestate headers 中提取
-	ctx = propagator.Extract(ctx, &metadataCarrier{md: md})
-	// 如果标准传播器没有提取到trace，尝试从自定义header提取
-	if !tracex.IsValidTraceContext(ctx) {
-		if traceIDStr := md.Get(CtxTraceHeader); len(traceIDStr) > 0 {
-			if spanIDStr := md.Get(CtxSpanHeader); len(spanIDStr) > 0 {
-				// 尝试创建span context
-				// 这里可以调用trace包的辅助函数
-				// 暂时跳过，因为标准传播器应该能处理大部分情况
-			}
+
+	// 提取业务信息
+	if values := md.Get(CtxMerchantID); len(values) > 0 {
+		if merchantID, err := cast.ToInt64E(values[0]); err == nil {
+			ctx = WithMetadata(ctx, CtxMerchantID, merchantID)
 		}
 	}
+
+	if values := md.Get(CtxCurrencyCode); len(values) > 0 {
+		ctx = WithMetadata(ctx, CtxCurrencyCode, values[0])
+	}
+
+	if values := md.Get(CtxMerchantUserID); len(values) > 0 {
+		ctx = WithMetadata(ctx, CtxMerchantUserID, values[0])
+	}
+
+	// 提取trace信息（如果需要恢复）
+	if values := md.Get(CtxTraceHeader); len(values) > 0 {
+		traceID := values[0]
+		var spanID string
+		if spanValues := md.Get(CtxSpanHeader); len(spanValues) > 0 {
+			spanID = spanValues[0]
+		}
+		ctx = tracex.RestoreTraceContext(ctx, traceID, spanID)
+	}
+
 	return ctx
 }
 
