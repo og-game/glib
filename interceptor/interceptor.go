@@ -2,10 +2,10 @@ package interceptor
 
 import (
 	"context"
-	"fmt"
 	"github.com/og-game/glib/metadata"
 	tracex "github.com/og-game/glib/trace"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 )
 
@@ -16,25 +16,20 @@ func ServerTenantInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (interface{}, error) {
 
-		// 从gRPC metadata中提取OpenTelemetry trace信息
-		ctx = metadata.ExtractTraceFromGRPCMetadata(ctx)
-
-		// 开始一个新的span
-		ctx, span := tracex.EnsureTraceContext(ctx, fmt.Sprintf("grpc.server.%s", info.FullMethod))
-		defer span.End()
-
 		// 从Metadata获取商户ID，如果没有就是0
 		merchantID, currencyCode, merchantUserID := metadata.GetMerchantIDCurrencyCodeFromRpcMetadata(ctx)
 
-		// 设置span属性
-		span.SetAttributes(
-			attribute.String("rpc.service", info.FullMethod),
-			attribute.String("rpc.method", info.FullMethod),
-			attribute.String("component", "grpc_server"),
-			attribute.Int64("merchant.id", merchantID),
-			attribute.String("merchant.currency", currencyCode),
-			attribute.String("merchant.user_id", merchantUserID),
-		)
+		// 获取 go-zero 已创建的 span（如果存在）
+		// go-zero 会自动创建 span，我们只需要添加商户属性
+		span := trace.SpanFromContext(ctx)
+		if span.IsRecording() {
+			// 添加商户信息到现有 span
+			span.SetAttributes(
+				attribute.Int64("merchant.id", merchantID),
+				attribute.String("merchant.currency", currencyCode),
+				attribute.String("merchant.merchant_user_id", merchantUserID),
+			)
+		}
 
 		// 写入Context（即使是0也写入）
 		ctx = metadata.WithMerchantIDCurrencyCodeMetadata(ctx, merchantID, currencyCode)
@@ -58,25 +53,19 @@ func ServerTenantStreamInterceptor() grpc.StreamServerInterceptor {
 		// 从Metadata获取商户ID
 		ctx := ss.Context()
 
-		// 从gRPC metadata中提取OpenTelemetry trace信息
-		ctx = metadata.ExtractTraceFromGRPCMetadata(ctx)
-
-		// 开始一个新的span
-		ctx, span := tracex.EnsureTraceContext(ctx, fmt.Sprintf("grpc.server.stream.%s", info.FullMethod))
-		defer span.End()
-
 		// 从Metadata获取商户ID，如果没有就是0
 		merchantID, currencyCode, merchantUserID := metadata.GetMerchantIDCurrencyCodeFromRpcMetadata(ctx)
 
-		// 设置span属性
-		span.SetAttributes(
-			attribute.String("rpc.service", info.FullMethod),
-			attribute.String("rpc.method", info.FullMethod),
-			attribute.String("component", "grpc_server_stream"),
-			attribute.Int64("merchant.id", merchantID),
-			attribute.String("merchant.currency", currencyCode),
-			attribute.String("merchant.user_id", merchantUserID),
-		)
+		// 获取 go-zero 已创建的 span（如果存在）
+		span := trace.SpanFromContext(ctx)
+		if span.IsRecording() {
+			// 添加商户信息到现有 span
+			span.SetAttributes(
+				attribute.Int64("merchant.id", merchantID),
+				attribute.String("merchant.currency", currencyCode),
+				attribute.String("merchant.merchant_user_id", merchantUserID),
+			)
+		}
 
 		// 写入Context（即使是0也写入）
 		ctx = metadata.WithMerchantIDCurrencyCodeMetadata(ctx, merchantID, currencyCode)
@@ -114,23 +103,21 @@ func ClientTenantInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{},
 		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 
-		// 开始一个客户端span
-		ctx, span := tracex.EnsureTraceContext(ctx, fmt.Sprintf("grpc.client.%s", method))
-		defer span.End()
-
 		// 从Context获取商户ID并写入Metadata（包括0值）
 		merchantID, currencyCode := metadata.GetMerchantIDCurrencyCodeFromCtx(ctx)
 		merchantUserID := metadata.GetMerchantUserIDFromCtx(ctx)
 
-		// 设置span属性
-		span.SetAttributes(
-			attribute.String("rpc.service", method),
-			attribute.String("rpc.method", method),
-			attribute.String("component", "grpc_client"),
-			attribute.Int64("merchant.id", merchantID),
-			attribute.String("merchant.currency", currencyCode),
-			attribute.String("merchant.user_id", merchantUserID),
-		)
+		// 获取 go-zero 已创建的 span（如果存在）
+		span := trace.SpanFromContext(ctx)
+		if span.IsRecording() {
+			// 添加商户信息到现有 span
+			span.SetAttributes(
+				attribute.Int64("merchant.id", merchantID),
+				attribute.String("merchant.currency", currencyCode),
+				attribute.String("merchant.merchant_user_id", merchantUserID),
+			)
+		}
+
 		// 设置商户信息到gRPC metadata
 		ctx = metadata.WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx, merchantID, currencyCode, merchantUserID)
 
@@ -153,23 +140,20 @@ func ClientTenantStreamInterceptor() grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn,
 		method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 
-		// 开始一个客户端流式span
-		ctx, span := tracex.EnsureTraceContext(ctx, fmt.Sprintf("grpc.client.stream.%s", method))
-		defer span.End()
-
 		// 从Context获取商户ID并写入Metadata
 		merchantID, currencyCode := metadata.GetMerchantIDCurrencyCodeFromCtx(ctx)
 		merchantUserID := metadata.GetMerchantUserIDFromCtx(ctx)
 
-		// 设置span属性
-		span.SetAttributes(
-			attribute.String("rpc.service", method),
-			attribute.String("rpc.method", method),
-			attribute.String("component", "grpc_client_stream"),
-			attribute.Int64("merchant.id", merchantID),
-			attribute.String("merchant.currency", currencyCode),
-			attribute.String("merchant.user_id", merchantUserID),
-		)
+		// 获取 go-zero 已创建的 span（如果存在）
+		span := trace.SpanFromContext(ctx)
+		if span.IsRecording() {
+			// 添加商户信息到现有 span
+			span.SetAttributes(
+				attribute.Int64("merchant.id", merchantID),
+				attribute.String("merchant.currency", currencyCode),
+				attribute.String("merchant.merchant_user_id", merchantUserID),
+			)
+		}
 
 		// 设置商户信息到gRPC metadata
 		ctx = metadata.WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx, merchantID, currencyCode, merchantUserID)
