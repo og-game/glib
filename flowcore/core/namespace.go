@@ -13,93 +13,48 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-// NamespaceManager 命名空间管理器
-type NamespaceManager struct {
-	client client.NamespaceClient
-}
+const (
+	defaultRetentionPeriod = 72 * time.Hour // 默认保留期3天
+)
 
-// NewNamespaceManager 创建命名空间管理器
-func NewNamespaceManager(cfg *config.Config) (*NamespaceManager, error) {
-	namespaceClient, err := createNamespaceClient(cfg)
+// EnsureNamespaceExists 确保命名空间存在
+func EnsureNamespaceExists(ctx context.Context, cfg *config.Config) error {
+	nsClient, err := createNamespaceClient(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create namespace client: %w", err)
+		return fmt.Errorf("failed to create namespace client: %w", err)
 	}
+	defer nsClient.Close()
 
-	return &NamespaceManager{
-		client: namespaceClient,
-	}, nil
-}
-
-// EnsureNamespaceExists 确保命名空间存在，不存在则创建
-func (nm *NamespaceManager) EnsureNamespaceExists(ctx context.Context, cfg *config.Config) error {
 	// 检查命名空间是否存在
-	exists, err := nm.CheckNamespaceExists(ctx, cfg.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to check namespace existence: %w", err)
+	if _, err = nsClient.Describe(ctx, cfg.Namespace); err == nil {
+		return nil // 命名空间已存在
+	} else if !isNamespaceNotFoundError(err) {
+		return err // 其他错误
 	}
 
-	if exists {
-		fmt.Printf("✅ Namespace '%s' already exists\n", cfg.Namespace)
-		return nil
-	}
-
-	// 命名空间不存在，创建它
-	fmt.Printf("🚀 Creating namespace '%s'...\n", cfg.Namespace)
-	err = nm.CreateNamespace(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create namespace: %w", err)
-	}
-
-	fmt.Printf("✅ Successfully created namespace '%s'\n", cfg.Namespace)
-	return nil
+	// 创建命名空间
+	return createNamespace(ctx, nsClient, cfg)
 }
 
-// CheckNamespaceExists 检查命名空间是否存在
-func (nm *NamespaceManager) CheckNamespaceExists(ctx context.Context, namespaceName string) (bool, error) {
-	_, err := nm.client.Describe(ctx, namespaceName)
-	if err == nil {
-		return true, nil
-	}
+// createNamespace 创建命名空间
+func createNamespace(ctx context.Context, nsClient client.NamespaceClient, cfg *config.Config) error {
+	retentionPeriod := parseRetentionPeriod(cfg.NamespaceConf.RetentionPeriod)
 
-	// 检查是否是"命名空间不存在"的错误
-	if IsNamespaceNotFoundError(err) {
-		return false, nil
-	}
-
-	// 其他错误
-	return false, err
-}
-
-// CreateNamespace 创建命名空间
-func (nm *NamespaceManager) CreateNamespace(ctx context.Context, cfg *config.Config) error {
-	// 解析保留期
-	retentionPeriod := ParseRetentionPeriod(cfg.NamespaceConf.RetentionPeriod)
-
-	// 设置描述
 	description := cfg.NamespaceConf.Description
 	if description == "" {
-		description = fmt.Sprintf("Auto-created namespace for %s", cfg.Namespace)
+		description = fmt.Sprintf("Namespace for %s", cfg.Namespace)
 	}
 
-	// 创建命名空间请求
 	request := &workflowservice.RegisterNamespaceRequest{
 		Namespace:                        cfg.Namespace,
 		Description:                      description,
 		WorkflowExecutionRetentionPeriod: retentionPeriod,
-		Data:                             make(map[string]string),
 		IsGlobalNamespace:                false,
-		HistoryArchivalState:             GetArchivalState(cfg.NamespaceConf.HistoryArchivalEnabled),
-		VisibilityArchivalState:          GetArchivalState(cfg.NamespaceConf.VisibilityArchivalEnabled),
+		HistoryArchivalState:             getArchivalState(cfg.NamespaceConf.HistoryArchivalEnabled),
+		VisibilityArchivalState:          getArchivalState(cfg.NamespaceConf.VisibilityArchivalEnabled),
 	}
 
-	return nm.client.Register(ctx, request)
-}
-
-// Close 关闭命名空间管理器
-func (nm *NamespaceManager) Close() {
-	if nm.client != nil {
-		nm.client.Close()
-	}
+	return nsClient.Register(ctx, request)
 }
 
 // createNamespaceClient 创建命名空间客户端
@@ -122,33 +77,29 @@ func createNamespaceClient(cfg *config.Config) (client.NamespaceClient, error) {
 	return client.NewNamespaceClient(options)
 }
 
-// ParseRetentionPeriod 解析保留期
-func ParseRetentionPeriod(retentionStr string) *durationpb.Duration {
+// parseRetentionPeriod 解析保留期
+func parseRetentionPeriod(retentionStr string) *durationpb.Duration {
 	if retentionStr == "" {
-		// 默认保留期：3天
-		return durationpb.New(72 * time.Hour)
+		return durationpb.New(defaultRetentionPeriod)
 	}
 
-	duration, err := time.ParseDuration(retentionStr)
-	if err != nil {
-		// 解析失败，使用默认值
-		fmt.Printf("⚠️ Invalid retention period '%s', using default 72h\n", retentionStr)
-		return durationpb.New(72 * time.Hour)
+	if duration, err := time.ParseDuration(retentionStr); err == nil {
+		return durationpb.New(duration)
 	}
 
-	return durationpb.New(duration)
+	return durationpb.New(defaultRetentionPeriod)
 }
 
-// GetArchivalState 获取归档状态
-func GetArchivalState(enabled bool) enums.ArchivalState {
+// getArchivalState 获取归档状态
+func getArchivalState(enabled bool) enums.ArchivalState {
 	if enabled {
 		return enums.ARCHIVAL_STATE_ENABLED
 	}
 	return enums.ARCHIVAL_STATE_DISABLED
 }
 
-// IsNamespaceNotFoundError 判断是否为命名空间不存在错误
-func IsNamespaceNotFoundError(err error) bool {
+// isNamespaceNotFoundError 判断是否为命名空间不存在错误
+func isNamespaceNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -157,59 +108,47 @@ func IsNamespaceNotFoundError(err error) bool {
 	return strings.Contains(errMsg, "namespace") &&
 		(strings.Contains(errMsg, "not found") ||
 			strings.Contains(errMsg, "does not exist") ||
-			strings.Contains(errMsg, "unknown namespace"))
+			strings.Contains(errMsg, "unknown"))
 }
 
-// EnsureNamespaceExists 全局函数，用于在客户端创建时调用
-func EnsureNamespaceExists(ctx context.Context, cfg *config.Config) error {
-	nsManager, err := NewNamespaceManager(cfg)
+// ValidateNamespace 验证命名空间是否存在
+func ValidateNamespace(ctx context.Context, cfg *config.Config) error {
+	nsClient, err := createNamespaceClient(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create namespace manager: %w", err)
+		return fmt.Errorf("failed to create namespace client: %w", err)
 	}
-	defer nsManager.Close()
+	defer nsClient.Close()
 
-	return nsManager.EnsureNamespaceExists(ctx, cfg)
-}
-
-// CreateMultipleNamespaces 批量创建命名空间
-func CreateMultipleNamespaces(ctx context.Context, cfg *config.Config, namespaces []string) error {
-	nsManager, err := NewNamespaceManager(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create namespace manager: %w", err)
-	}
-	defer nsManager.Close()
-
-	for _, ns := range namespaces {
-		// 为每个命名空间创建单独的配置
-		nsCfg := *cfg
-		nsCfg.Namespace = ns
-
-		err = nsManager.EnsureNamespaceExists(ctx, &nsCfg)
-		if err != nil {
-			return fmt.Errorf("failed to ensure namespace '%s': %w", ns, err)
-		}
+	if _, err := nsClient.Describe(ctx, cfg.Namespace); err != nil {
+		return fmt.Errorf("namespace '%s' validation failed: %w", cfg.Namespace, err)
 	}
 
 	return nil
 }
 
-// ValidateNamespace 验证命名空间配置
-func ValidateNamespace(ctx context.Context, cfg *config.Config) error {
-	nsManager, err := NewNamespaceManager(cfg)
+// CreateMultipleNamespaces 批量创建命名空间
+func CreateMultipleNamespaces(ctx context.Context, cfg *config.Config, namespaces []string) error {
+	nsClient, err := createNamespaceClient(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create namespace manager: %w", err)
+		return fmt.Errorf("failed to create namespace client: %w", err)
 	}
-	defer nsManager.Close()
+	defer nsClient.Close()
 
-	exists, err := nsManager.CheckNamespaceExists(ctx, cfg.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to check namespace: %w", err)
+	for _, ns := range namespaces {
+		nsCfg := *cfg
+		nsCfg.Namespace = ns
+
+		// 检查并创建
+		if _, err = nsClient.Describe(ctx, ns); err != nil {
+			if isNamespaceNotFoundError(err) {
+				if err = createNamespace(ctx, nsClient, &nsCfg); err != nil {
+					return fmt.Errorf("failed to create namespace '%s': %w", ns, err)
+				}
+			} else {
+				return fmt.Errorf("failed to check namespace '%s': %w", ns, err)
+			}
+		}
 	}
 
-	if !exists {
-		return fmt.Errorf("namespace '%s' does not exist", cfg.Namespace)
-	}
-
-	fmt.Printf("✅ Namespace '%s' exists and is valid\n", cfg.Namespace)
 	return nil
 }

@@ -21,6 +21,7 @@ const (
 	CtxPlatformID     = "x-platform-id"
 	CtxTraceHeader    = "x-trace-id"
 	CtxSpanHeader     = "x-span-id"
+	CtxBaggageInfo    = "x-baggage"
 )
 
 var (
@@ -34,15 +35,12 @@ func WithMetadata(ctx context.Context, key, val any) context.Context {
 }
 
 func WithMerchantIDCurrencyCodeMetadata(ctx context.Context, merchantID int64, currencyCode string) context.Context {
-	ctx = context.WithValue(ctx, CtxMerchantID, merchantID)
-	ctx = context.WithValue(ctx, CtxCurrencyCode, currencyCode)
-	ctx = context.WithValue(ctx, CtxCurrencyCode, currencyCode)
-	return ctx
-}
-
-func WithTrace(ctx context.Context, traceID, spanID string) context.Context {
-	ctx = context.WithValue(ctx, CtxTraceHeader, traceID)
-	ctx = context.WithValue(ctx, CtxSpanHeader, spanID)
+	if merchantID > 0 {
+		ctx = context.WithValue(ctx, CtxMerchantID, merchantID)
+	}
+	if currencyCode != "" {
+		ctx = context.WithValue(ctx, CtxCurrencyCode, currencyCode)
+	}
 	return ctx
 }
 
@@ -92,29 +90,11 @@ func GetTraceFromCtx(ctx context.Context) (traceID, spanID string) {
 
 // GetTraceLogger 获取带有trace信息的logger
 func GetTraceLogger(ctx context.Context) logx.Logger {
-	logger := logx.WithContext(ctx)
-
-	traceID, spanID := GetTraceFromCtx(ctx)
-
-	if traceID != "" || spanID != "" {
-		fields := make([]logx.LogField, 0, 2)
-		if traceID != "" {
-			fields = append(fields, logx.Field("trace_id", traceID))
-		}
-		if spanID != "" {
-			fields = append(fields, logx.Field("span_id", spanID))
-		}
-		logger = logger.WithFields(fields...)
-	}
-	return logger
+	return logx.WithContext(ctx)
 }
 
 // WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata 设置商户ID 币种 商户用户id 到gRPC metadata
 func WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx context.Context, merchantID int64, currencyCode, merchantUserID string) context.Context {
-	if merchantID <= 0 {
-		return ctx
-	}
-
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {
 		md = metadata.New(nil)
@@ -161,37 +141,19 @@ func GetMerchantIDCurrencyCodeFromRpcMetadata(ctx context.Context) (merchantID i
 		return
 	}
 
-	values := md.Get(CtxMerchantID)
-	if len(values) == 0 {
-		return
+	if values := md.Get(CtxMerchantID); len(values) > 0 {
+		merchantID, err = cast.ToInt64E(values[0])
+		if err != nil {
+			logx.Errorf("Get merchant id from metadata error: %v", err)
+		}
 	}
 
-	merchantID, err = cast.ToInt64E(values[0])
-	if err != nil {
-		logx.Errorf("Get merchant id from metadata error: %v", err)
-		return
+	if values := md.Get(CtxCurrencyCode); len(values) > 0 {
+		currencyCode = values[0]
 	}
 
-	values2 := md.Get(CtxCurrencyCode)
-	if len(values2) == 0 {
-		return
-	}
-
-	currencyCode, err = cast.ToStringE(values2[0])
-	if err != nil {
-		logx.Errorf("Get currency code from metadata error: %v", err)
-		return
-	}
-
-	values3 := md.Get(CtxMerchantUserID)
-	if len(values3) == 0 {
-		return
-	}
-
-	merchantUserID, err = cast.ToStringE(values3[0])
-	if err != nil {
-		logx.Errorf("Get merchant user id from metadata error: %v", err)
-		return
+	if values := md.Get(CtxMerchantUserID); len(values) > 0 {
+		merchantUserID = values[0]
 	}
 
 	return
@@ -203,8 +165,33 @@ func ExtractTraceFromGRPCMetadata(ctx context.Context) context.Context {
 	if !ok {
 		return ctx
 	}
-	// 使用OpenTelemetry的标准传播器提取trace信息
-	return propagator.Extract(ctx, &metadataCarrier{md: md})
+
+	// 提取业务信息
+	if values := md.Get(CtxMerchantID); len(values) > 0 {
+		if merchantID, err := cast.ToInt64E(values[0]); err == nil {
+			ctx = WithMetadata(ctx, CtxMerchantID, merchantID)
+		}
+	}
+
+	if values := md.Get(CtxCurrencyCode); len(values) > 0 {
+		ctx = WithMetadata(ctx, CtxCurrencyCode, values[0])
+	}
+
+	if values := md.Get(CtxMerchantUserID); len(values) > 0 {
+		ctx = WithMetadata(ctx, CtxMerchantUserID, values[0])
+	}
+
+	// 提取trace信息（如果需要恢复）
+	if values := md.Get(CtxTraceHeader); len(values) > 0 {
+		traceID := values[0]
+		var spanID string
+		if spanValues := md.Get(CtxSpanHeader); len(spanValues) > 0 {
+			spanID = spanValues[0]
+		}
+		ctx = tracex.RestoreTraceContext(ctx, traceID, spanID)
+	}
+
+	return ctx
 }
 
 // WithSkipTenant 跳过租户条件

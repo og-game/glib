@@ -5,174 +5,259 @@ import (
 	"fmt"
 	"github.com/og-game/glib/flowcore/config"
 	"github.com/og-game/glib/flowcore/core"
-	"github.com/og-game/glib/flowcore/pkg"
+	"github.com/og-game/glib/flowcore/interceptor"
+	"github.com/og-game/glib/flowcore/logger"
+	flowcorepkg "github.com/og-game/glib/flowcore/pkg"
 	enumspb "go.temporal.io/api/enums/v1"
-	tclient "go.temporal.io/sdk/client"
+	sdkclient "go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 	"sync"
 	"time"
 )
 
+// ========================= SDK 状态管理 =========================
+
 var (
-	initialized bool           // 标记 SDK 是否已初始化
-	mu          sync.Mutex     // 互斥锁，用于保护 initialized 变量的并发访问
-	sdkConfig   *config.Config // 存储 SDK 的配置
+	sdk *SDK
+	mu  sync.RWMutex
 )
+
+// SDK 包含所有 SDK 组件
+type SDK struct {
+	config      *config.Config
+	initialized bool
+}
+
+// ========================= 初始化选项 =========================
+
+// InitializeOptions SDK 初始化选项
+type InitializeOptions struct {
+	Config            *config.Config      // 基本配置
+	MetricsConfig     *flowcorepkg.Config // 指标配置
+	InterceptorConfig *interceptor.Config // 拦截器配置
+}
+
+// DefaultInitializeOptions 返回默认初始化选项
+func DefaultInitializeOptions() *InitializeOptions {
+	return &InitializeOptions{
+		Config:            config.DefaultConfig(),
+		MetricsConfig:     flowcorepkg.DefaultConfig(),
+		InterceptorConfig: interceptor.DefaultConfig(),
+	}
+}
+
+// ========================= SDK 初始化 =========================
 
 // Initialize 初始化 Temporal SDK
 func Initialize(ctx context.Context, cfg *config.Config) error {
-	mu.Lock()         // 获取锁，防止并发初始化
-	defer mu.Unlock() // 确保函数退出时释放锁
+	return InitializeWithOptions(ctx, &InitializeOptions{Config: cfg})
+}
 
-	if initialized {
-		return fmt.Errorf("temporal SDK already initialized") // 如果已初始化，返回错误
+// InitializeWithOptions 使用选项初始化 Temporal SDK
+func InitializeWithOptions(ctx context.Context, opts *InitializeOptions) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if sdk != nil && sdk.initialized {
+		return fmt.Errorf("temporal SDK already initialized")
 	}
 
-	if cfg == nil {
-		cfg = config.DefaultConfig() // 如果配置为空，使用默认配置
+	// 准备选项
+	if opts == nil {
+		opts = DefaultInitializeOptions()
+	}
+	if opts.Config == nil {
+		opts.Config = config.DefaultConfig()
 	}
 
 	// 验证配置
-	if err := validateConfig(cfg); err != nil {
-		return fmt.Errorf("invalid configuration: %w", err) // 配置无效时返回错误
+	if err := validateConfig(opts.Config); err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// 初始化重试策略
-	pkg.InitializeDefaultPolicies()
-
-	// 创建默认客户端
-	_, err := core.GetOrCreateDefault(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create client: %w", err) // 创建客户端失败时返回错误
+	// 初始化各个组件
+	if err := initializeComponents(ctx, opts); err != nil {
+		return err
 	}
 
-	sdkConfig = cfg    // 保存传入的配置
-	initialized = true // 标记 SDK 为已初始化
+	// 创建 SDK 实例
+	sdk = &SDK{
+		config:      opts.Config,
+		initialized: true,
+	}
 
 	fmt.Println("Temporal SDK initialized successfully")
+	fmt.Printf("Workers configured: %d\n", len(opts.Config.Workers))
+
+	return nil
+}
+
+// initializeComponents 初始化所有组件
+func initializeComponents(ctx context.Context, opts *InitializeOptions) error {
+	// 初始化重试策略
+	flowcorepkg.InitializeDefaultPolicies()
+
+	// 初始化指标管理器
+	if err := initializeMetrics(opts); err != nil {
+		return fmt.Errorf("failed to initialize metrics: %w", err)
+	}
+
+	// 创建默认客户端
+	if _, err := core.GetOrCreateDefault(ctx, opts.Config); err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
+	}
+
+	return nil
+}
+
+// initializeMetrics 初始化指标系统
+func initializeMetrics(opts *InitializeOptions) error {
+	if opts.MetricsConfig == nil {
+		opts.MetricsConfig = flowcorepkg.DefaultConfig()
+	}
+
+	// 设置日志器
+	if opts.MetricsConfig.Logger == nil {
+		opts.MetricsConfig.Logger = logger.NewDevelopmentLogger("info")
+	}
+
+	flowcorepkg.InitGlobalManager(opts.MetricsConfig)
 	return nil
 }
 
 // MustInitialize 初始化 SDK，如果失败则 panic
 func MustInitialize(ctx context.Context, cfg *config.Config) {
 	if err := Initialize(ctx, cfg); err != nil {
-		panic(fmt.Sprintf("Failed to initialize Temporal SDK: %v", err)) // 初始化失败时触发 panic
+		panic(fmt.Sprintf("Failed to initialize Temporal SDK: %v", err))
 	}
 }
 
+// ========================= 客户端访问 =========================
+
 // Client 返回默认的 Temporal 客户端实例
-func Client(ctx context.Context) tclient.Client {
-	if !initialized {
-		panic("temporal SDK not initialized - call Initialize() first") // 如果未初始化，触发 panic
-	}
-	c, err := core.GetOrCreateDefault(ctx, sdkConfig) // 获取或创建默认客户端
+func Client(ctx context.Context) sdkclient.Client {
+	ensureInitialized()
+
+	c, err := core.GetOrCreateDefault(ctx, sdk.config)
 	if err != nil {
-		panic(fmt.Sprintf("failed to get client: %v", err)) // 获取客户端失败时触发 panic
+		panic(fmt.Sprintf("failed to get client: %v", err))
 	}
-	return c // 返回客户端实例
+	return c
 }
+
+// ========================= 注册功能 =========================
 
 // RegisterWorkflow 全局注册一个工作流
 func RegisterWorkflow(name string, workflow interface{}) {
-	core.RegisterWorkflow(name, workflow) // 调用核心包的注册工作流方法
+	core.RegisterWorkflow(name, workflow)
 }
 
 // RegisterActivity 全局注册一个活动
 func RegisterActivity(name string, activity interface{}) {
-	core.RegisterActivity(name, activity) // 调用核心包的注册活动方法
+	core.RegisterActivity(name, activity)
 }
 
 // RegisterModule 全局注册一个模块
 func RegisterModule(module core.Module) {
-	core.RegisterModule(module) // 调用核心包的注册模块方法
+	core.RegisterModule(module)
 }
 
-// NewWorker 创建一个新的工作者 (Worker)
+// ========================= Worker 管理 =========================
+
+// WorkerOptions Worker 创建选项
+type WorkerOptions struct {
+	Config            *config.WorkerConfig // Worker 配置
+	InterceptorConfig *interceptor.Config  // 拦截器配置
+	OnError           func(error)          // 错误回调
+}
+
+// NewWorker 创建一个新的工作者
 func NewWorker(ctx context.Context, cfg *config.WorkerConfig) *core.Worker {
-	if !initialized {
-		panic("temporal SDK not initialized - call Initialize() first") // 如果未初始化，触发 panic
+	return NewWorkerWithOptions(ctx, &WorkerOptions{Config: cfg})
+}
+
+// NewWorkerWithOptions 使用选项创建一个新的工作者
+func NewWorkerWithOptions(ctx context.Context, opts *WorkerOptions) *core.Worker {
+	ensureInitialized()
+
+	if opts == nil || opts.Config == nil {
+		panic("worker config is required")
 	}
 
-	c := Client(ctx)            // 获取默认客户端
-	w := core.NewWorker(c, cfg) // 使用客户端和工作者配置创建新的工作者
+	// 准备拦截器配置
+	interceptorConfig := opts.InterceptorConfig
+	if interceptorConfig == nil {
+		interceptorConfig = interceptor.DefaultConfig()
+	}
+
+	// 创建 Worker 选项
+	workerOpts := &core.WorkerOptions{
+		EnableTrace:      interceptorConfig.EnableTrace,
+		EnableMetrics:    interceptorConfig.EnableMetrics,
+		Logger:           interceptorConfig.Logger,
+		CustomAttributes: interceptorConfig.CustomAttributes,
+		OnError:          opts.OnError,
+	}
+
+	// 创建工作者
+	c := Client(ctx)
+	w := core.NewWorkerWithOptions(c, opts.Config, workerOpts)
 
 	// 应用全局注册表中的工作流和活动
 	core.GetGlobal().ApplyTo(w)
 
-	core.AddWorker(w) // 将新创建的工作者添加到核心包的工作者列表中
-	return w          // 返回工作者实例
+	// 添加到管理器
+	if err := core.AddWorker(w); err != nil {
+		// 如果添加失败（重复的 TaskQueue），只记录警告
+		fmt.Printf("Warning: %v\n", err)
+	}
+
+	return w
 }
 
 // StartWorkers 启动所有工作者
 func StartWorkers(ctx context.Context) error {
-	if !initialized {
-		return fmt.Errorf("temporal SDK not initialized") // 如果未初始化，返回错误
-	}
-	return core.StartAll(ctx) // 调用核心包的启动所有工作者方法
+	ensureInitialized()
+	return core.StartAll(ctx)
 }
 
 // StopWorkers 停止所有工作者
 func StopWorkers() {
-	core.StopAll() // 调用核心包的停止所有工作者方法
+	core.StopAll()
 }
 
-// Shutdown 关闭 SDK
-func Shutdown() {
-	StopWorkers()                                 // 停止所有工作者
-	core.CloseAll()                               // 关闭所有客户端连接
-	mu.Lock()                                     // 获取锁
-	initialized = false                           // 标记 SDK 为未初始化
-	mu.Unlock()                                   // 释放锁
-	fmt.Println("Temporal SDK shutdown complete") // 打印关闭完成信息
-}
-
-// IsInitialized 返回 SDK 是否已初始化
-func IsInitialized() bool {
-	mu.Lock()          // 获取锁
-	defer mu.Unlock()  // 确保函数退出时释放锁
-	return initialized // 返回初始化状态
-}
-
-// GetRetryPolicy 根据名称返回一个重试策略
-func GetRetryPolicy(name string) *temporal.RetryPolicy {
-	return pkg.Get(name) // 从 pkg 包中获取指定名称的重试策略
-}
+// ========================= 工作流和活动选项 =========================
 
 // WorkflowOptions 创建标准的工作流选项
-func WorkflowOptions(workflowID, taskQueue string) tclient.StartWorkflowOptions {
-	if !initialized {
-		panic("temporal SDK not initialized") // 如果未初始化，触发 panic
-	}
+func WorkflowOptions(workflowID, taskQueue string) sdkclient.StartWorkflowOptions {
+	ensureInitialized()
 
-	return tclient.StartWorkflowOptions{
-		ID:                       workflowID,                                       // 工作流 ID
-		TaskQueue:                taskQueue,                                        // 任务队列名称
-		WorkflowExecutionTimeout: sdkConfig.Timeout.WorkflowExecution,              // 工作流执行超时时间
-		WorkflowTaskTimeout:      sdkConfig.Timeout.WorkflowTask,                   // 工作流任务超时时间
-		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE, // 工作流 ID 重用策略：允许重复
+	return sdkclient.StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskQueue,
+		WorkflowExecutionTimeout: sdk.config.Timeout.WorkflowExecution,
+		WorkflowTaskTimeout:      sdk.config.Timeout.WorkflowTask,
+		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	}
 }
 
 // WorkflowOptionsWithRetry 创建带有自定义重试策略的工作流选项
-func WorkflowOptionsWithRetry(workflowID, taskQueue string, retryPolicy *temporal.RetryPolicy) tclient.StartWorkflowOptions {
-	options := WorkflowOptions(workflowID, taskQueue) // 获取标准工作流选项
-	options.RetryPolicy = retryPolicy                 // 设置自定义重试策略
-	return options                                    // 返回带有重试策略的选项
+func WorkflowOptionsWithRetry(workflowID, taskQueue string, retryPolicy *temporal.RetryPolicy) sdkclient.StartWorkflowOptions {
+	options := WorkflowOptions(workflowID, taskQueue)
+	options.RetryPolicy = retryPolicy
+	return options
 }
 
 // ActivityOptions 创建标准的活动选项
 func ActivityOptions(options ...core.ActivityOption) workflow.ActivityOptions {
-	if !initialized {
-		panic("temporal SDK not initialized") // 如果未初始化，触发 panic
-	}
+	ensureInitialized()
 
-	// 默认选项
 	opts := workflow.ActivityOptions{
-		ScheduleToStartTimeout: sdkConfig.Timeout.ActivityStart,     // 调度到启动的超时时间
-		StartToCloseTimeout:    sdkConfig.Timeout.ActivityExecution, // 启动到关闭的超时时间
-		HeartbeatTimeout:       sdkConfig.Timeout.ActivityHeartbeat, // 心跳超时时间
-		RetryPolicy:            pkg.Get(pkg.Standard),               // 使用标准重试策略
+		ScheduleToStartTimeout: sdk.config.Timeout.ActivityStart,
+		StartToCloseTimeout:    sdk.config.Timeout.ActivityExecution,
+		HeartbeatTimeout:       sdk.config.Timeout.ActivityHeartbeat,
+		RetryPolicy:            flowcorepkg.Get(flowcorepkg.Standard),
 	}
 
 	// 应用自定义选项
@@ -181,103 +266,156 @@ func ActivityOptions(options ...core.ActivityOption) workflow.ActivityOptions {
 	}
 
 	return opts
-
 }
 
 // ActivityOptionsWithRetry 创建带有自定义重试策略的活动选项
 func ActivityOptionsWithRetry(retryPolicyName string, options ...core.ActivityOption) workflow.ActivityOptions {
-	opts := ActivityOptions(options...)         // 获取标准活动选项
-	opts.RetryPolicy = pkg.Get(retryPolicyName) // 设置指定名称的重试策略
-	return opts                                 // 返回带有重试策略的选项
+	opts := ActivityOptions(options...)
+	opts.RetryPolicy = flowcorepkg.Get(retryPolicyName)
+	return opts
 }
 
 // CriticalActivityOptions 创建关键活动的活动选项
 func CriticalActivityOptions(options ...core.ActivityOption) workflow.ActivityOptions {
-	opts := ActivityOptions(options...)      // 获取标准活动选项
-	opts.RetryPolicy = pkg.Get(pkg.Critical) // 使用关键重试策略
-	return opts                              // 返回带有关键重试策略的选项
-}
-
-// HighFrequencyFastOptions 高频快速处理选项
-// 适用于：高频率调用、执行时间短的任务（如缓存操作、简单计算等）
-func HighFrequencyFastOptions() workflow.ActivityOptions {
-	return ActivityOptions(
-		core.WithScheduleToStartTimeout(5*time.Second), // 更快的调度
-		core.WithStartToCloseTimeout(30*time.Second),   // 快速执行
-		core.WithHeartbeatTimeout(10*time.Second),      // 频繁心跳
-		core.WithRetryPolicy(pkg.Critical),             // 重试策略
-	)
-}
-
-// LowFrequencySlowOptions 短频慢速处理选项
-// 适用于：低频率调用、执行时间长的任务（如数据处理、报表生成等）
-func LowFrequencySlowOptions() workflow.ActivityOptions {
-	return ActivityOptions(
-		core.WithScheduleToStartTimeout(2*time.Minute), // 允许较长等待
-		core.WithStartToCloseTimeout(60*time.Minute),   // 长时间执行
-		core.WithHeartbeatTimeout(2*time.Minute),       // 较长心跳间隔
-		core.WithRetryPolicy(pkg.Critical),             // 重试策略
-	)
-}
-
-// NormalProcessingOptions 正常处理选项
-// 适用于：常规业务处理、外部API调用等标准场景
-func NormalProcessingOptions() workflow.ActivityOptions {
-	return ActivityOptions(
-		core.WithScheduleToStartTimeout(30*time.Second), // 标准调度时间
-		core.WithStartToCloseTimeout(5*time.Minute),     // 标准执行时间
-		core.WithHeartbeatTimeout(30*time.Second),       // 标准心跳间隔
-		core.WithRetryPolicy(pkg.Critical),              // 重试策略
-	)
+	return ActivityOptionsWithRetry(flowcorepkg.Critical, options...)
 }
 
 // LocalActivityOptions 创建标准的本地活动选项
 func LocalActivityOptions() workflow.LocalActivityOptions {
-	if !initialized {
-		panic("temporal SDK not initialized") // 如果未初始化，触发 panic
-	}
+	ensureInitialized()
 
 	return workflow.LocalActivityOptions{
-		ScheduleToCloseTimeout: sdkConfig.Timeout.ActivityExecution, // 调度到关闭的超时时间
-		RetryPolicy:            pkg.Get(pkg.Standard),               // 使用标准重试策略
+		ScheduleToCloseTimeout: sdk.config.Timeout.ActivityExecution,
+		RetryPolicy:            flowcorepkg.Get(flowcorepkg.Standard),
 	}
 }
 
+// ========================= 预设选项 =========================
+
+// HighFrequencyFastOptions 高频快速处理选项
+func HighFrequencyFastOptions() workflow.ActivityOptions {
+	return ActivityOptions(
+		core.WithScheduleToStartTimeout(5*time.Second),
+		core.WithStartToCloseTimeout(30*time.Second),
+		core.WithHeartbeatTimeout(10*time.Second),
+		core.WithRetryPolicy(flowcorepkg.Critical),
+	)
+}
+
+// LowFrequencySlowOptions 低频慢速处理选项
+func LowFrequencySlowOptions() workflow.ActivityOptions {
+	return ActivityOptions(
+		core.WithScheduleToStartTimeout(2*time.Minute),
+		core.WithStartToCloseTimeout(60*time.Minute),
+		core.WithHeartbeatTimeout(2*time.Minute),
+		core.WithRetryPolicy(flowcorepkg.Critical),
+	)
+}
+
+// NormalProcessingOptions 正常处理选项
+func NormalProcessingOptions() workflow.ActivityOptions {
+	return ActivityOptions(
+		core.WithScheduleToStartTimeout(30*time.Second),
+		core.WithStartToCloseTimeout(5*time.Minute),
+		core.WithHeartbeatTimeout(30*time.Second),
+		core.WithRetryPolicy(flowcorepkg.Critical),
+	)
+}
+
+// ========================= SDK 生命周期 =========================
+
+// Shutdown 关闭 SDK
+func Shutdown() {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if sdk == nil || !sdk.initialized {
+		return
+	}
+
+	// 停止所有 Workers
+	core.StopAll()
+
+	// 停止指标管理器
+	flowcorepkg.StopGlobalManager()
+
+	// 关闭所有客户端
+	core.CloseAll()
+
+	sdk.initialized = false
+}
+
+// IsInitialized 返回 SDK 是否已初始化
+func IsInitialized() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return sdk != nil && sdk.initialized
+}
+
+// ========================= 信息和指标 =========================
+
 // GetConfig 返回当前配置
 func GetConfig() *config.Config {
-	if !initialized {
-		return nil // 如果未初始化，返回 nil
+	mu.RLock()
+	defer mu.RUnlock()
+
+	if sdk == nil {
+		return nil
 	}
-	return sdkConfig // 返回保存的配置
+	return sdk.config
 }
 
 // GetStats 返回 SDK 统计信息
 func GetStats() map[string]interface{} {
-	workflowCount, activityCount := core.GetGlobal().Count() // 获取全局注册的工作流和活动数量
+	stats := map[string]interface{}{
+		"initialized": IsInitialized(),
+	}
 
-	return map[string]interface{}{
-		"initialized":     initialized,           // SDK 是否已初始化
-		"workflow_count":  workflowCount,         // 注册的工作流数量
-		"activity_count":  activityCount,         // 注册的活动数量
-		"worker_count":    core.GetWorkerCount(), // 工作者数量
-		"workers_running": core.IsRunning(),      // 工作者是否正在运行
+	if !IsInitialized() {
+		return stats
+	}
+
+	// 获取注册信息
+	workflowCount, activityCount := core.GetGlobal().Count()
+	stats["workflow_count"] = workflowCount
+	stats["activity_count"] = activityCount
+	stats["worker_count"] = core.GetWorkerCount()
+	stats["workers_running"] = core.IsRunning()
+
+	// 添加指标统计
+	for k, v := range flowcorepkg.GetGlobalMetrics() {
+		stats[fmt.Sprintf("metrics_%s", k)] = v
+	}
+
+	return stats
+}
+
+// ========================= 辅助函数 =========================
+
+// ensureInitialized 确保 SDK 已初始化
+func ensureInitialized() {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	if sdk == nil || !sdk.initialized {
+		panic("temporal SDK not initialized - call Initialize() first")
 	}
 }
 
 // validateConfig 验证配置的有效性
 func validateConfig(cfg *config.Config) error {
 	if cfg.HostPort == "" {
-		return fmt.Errorf("host_port is required") // 检查 HostPort 是否为空
+		return fmt.Errorf("host_port is required")
 	}
 	if cfg.Namespace == "" {
-		return fmt.Errorf("namespace is required") // 检查 Namespace 是否为空
+		return fmt.Errorf("namespace is required")
 	}
 	if len(cfg.Workers) == 0 {
-		return fmt.Errorf("at least one worker configuration is required") // 检查至少需要一个工作者配置
+		return fmt.Errorf("at least one worker configuration is required")
 	}
 	for i, workerCfg := range cfg.Workers {
 		if workerCfg.TaskQueue == "" {
-			return fmt.Errorf("worker[%d] task_queue is required", i) // 检查每个工作者的 TaskQueue 是否为空
+			return fmt.Errorf("worker[%d] task_queue is required", i)
 		}
 	}
 	return nil

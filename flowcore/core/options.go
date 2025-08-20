@@ -37,9 +37,11 @@ func WithRetryPolicy(policyName string) ActivityOption {
 	}
 }
 
-// WithExecutionTimeout 设置执行超时（常用的简化版本）
-func WithExecutionTimeout(timeout time.Duration) ActivityOption {
+// WithAllTimeouts 同时设置所有超时
+func WithAllTimeouts(scheduleToStart, startToClose, heartbeat time.Duration) ActivityOption {
 	return func(opts *workflow.ActivityOptions) {
-		opts.StartToCloseTimeout = timeout
+		opts.ScheduleToStartTimeout = scheduleToStart
+		opts.StartToCloseTimeout = startToClose
+		opts.HeartbeatTimeout = heartbeat
 	}
 }

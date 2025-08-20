@@ -64,7 +64,7 @@ type TimeoutConfig struct {
 type NamespaceConfig struct {
 	AutoCreate                bool   `json:"auto_create,default=true" yaml:"auto_create"`                                 // 是否自动创建命名空间
 	Description               string `json:"description,optional" yaml:"description"`                                     // 命名空间描述
-	RetentionPeriod           string `json:"retention_period,default=168h" yaml:"retention_period"`                       // 保留期 (如 "72h", "30d")
+	RetentionPeriod           string `json:"retention_period,default=72h" yaml:"retention_period"`                        // 保留期 (如 "72h", "30d")
 	HistoryArchivalEnabled    bool   `json:"history_archival_enabled,default=true" yaml:"history_archival_enabled"`       // 是否启用历史归档
 	VisibilityArchivalEnabled bool   `json:"visibility_archival_enabled,default=true" yaml:"visibility_archival_enabled"` // 是否启用可见性归档
 }

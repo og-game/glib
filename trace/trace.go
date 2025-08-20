@@ -3,133 +3,207 @@ package trace
 import (
 	"context"
 	"fmt"
+	zerotrace "github.com/zeromicro/go-zero/core/trace"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/propagation"
+	oteltrace "go.opentelemetry.io/otel/trace"
+	"sync"
 )
 
 const (
+	// MQ 消息中的 trace 字段
 	MessageTraceID = "__TRACE_ID__"
 	MessageSpanID  = "__SPAN_ID__"
+
+	// 默认服务名
+	DefaultServiceName = "default-lib"
 )
 
-// StartSpan 开始一个新的span
-func StartSpan(ctx context.Context, operationName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	tracer := otel.Tracer("default")
-	return tracer.Start(ctx, operationName, opts...)
+var (
+	once       sync.Once
+	propagator = propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	)
+)
+
+func init() {
+	once.Do(func() {
+		otel.SetTextMapPropagator(propagator)
+	})
 }
 
-// StartSpanWithService 使用指定服务名开始span
-func StartSpanWithService(ctx context.Context, serviceName, operationName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	if serviceName == "" {
-		serviceName = "default"
-	}
-	tracer := otel.Tracer(serviceName)
-	return tracer.Start(ctx, operationName, opts...)
-}
+// ========================= 基础 Trace 操作 =========================
 
-// GetTraceIDFromCtx 从context中获取trace ID
+// GetTraceIDFromCtx 从context中获取trace ID（兼容 go-zero）
 func GetTraceIDFromCtx(ctx context.Context) string {
-	spanCtx := trace.SpanContextFromContext(ctx)
-	if spanCtx.HasTraceID() {
+	if traceID := zerotrace.TraceIDFromContext(ctx); traceID != "" {
+		return traceID
+	}
+	if spanCtx := oteltrace.SpanContextFromContext(ctx); spanCtx.HasTraceID() {
 		return spanCtx.TraceID().String()
 	}
 	return ""
 }
 
-// GetSpanIDFromCtx 从context中获取span ID
+// GetSpanIDFromCtx 从context中获取span ID（兼容 go-zero）
 func GetSpanIDFromCtx(ctx context.Context) string {
-	spanCtx := trace.SpanContextFromContext(ctx)
-	if spanCtx.HasSpanID() {
+	if spanID := zerotrace.SpanIDFromContext(ctx); spanID != "" {
+		return spanID
+	}
+	if spanCtx := oteltrace.SpanContextFromContext(ctx); spanCtx.HasSpanID() {
 		return spanCtx.SpanID().String()
 	}
 	return ""
 }
 
-// RecordError 记录错误到span
-func RecordError(span trace.Span, err error) {
+// IsValidTraceContext 检查context中是否有有效的trace信息
+func IsValidTraceContext(ctx context.Context) bool {
+	traceID := GetTraceIDFromCtx(ctx)
+	return traceID != "" && traceID != "00000000000000000000000000000000"
+}
+
+// RestoreTraceContext 从 traceID 和 spanID 字符串恢复 OpenTelemetry context
+// 恢复 trace context（从字符串）
+func RestoreTraceContext(ctx context.Context, traceIDStr, spanIDStr string) context.Context {
+	if traceIDStr == "" {
+		return ctx
+	}
+
+	traceID, err := oteltrace.TraceIDFromHex(traceIDStr)
+	if err != nil {
+		return ctx
+	}
+
+	var spanID oteltrace.SpanID
+	if spanIDStr != "" {
+		spanID, _ = oteltrace.SpanIDFromHex(spanIDStr)
+	}
+
+	spanCtx := oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: oteltrace.FlagsSampled,
+		Remote:     true,
+	})
+
+	return oteltrace.ContextWithRemoteSpanContext(ctx, spanCtx)
+}
+
+// CopyContextWithTrace 复制 context 并保留 trace 信息
+func CopyContextWithTrace(parentCtx, newCtx context.Context) context.Context {
+	if !IsValidTraceContext(parentCtx) {
+		return newCtx
+	}
+	return RestoreTraceContext(newCtx, GetTraceIDFromCtx(parentCtx), GetSpanIDFromCtx(parentCtx))
+}
+
+// ========================= Span 创建操作 =========================
+
+// GetTracerFromContext 获取或创建 tracer
+func GetTracerFromContext(ctx context.Context, serviceName string) oteltrace.Tracer {
+	if span := oteltrace.SpanFromContext(ctx); span.SpanContext().IsValid() {
+		return span.TracerProvider().Tracer(serviceName)
+	}
+	return otel.Tracer(serviceName)
+}
+
+// StartSpan 开始一个新的span
+func StartSpan(ctx context.Context, operationName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
+	return StartSpanWithService(ctx, DefaultServiceName, operationName, opts...)
+}
+
+// StartSpanWithService 使用指定服务名开始span
+func StartSpanWithService(ctx context.Context, serviceName string, operationName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
+	if serviceName == "" {
+		serviceName = DefaultServiceName
+	}
+	return GetTracerFromContext(ctx, serviceName).Start(ctx, operationName, opts...)
+}
+
+// EnsureTraceContext 确保 context 有 trace
+func EnsureTraceContext(ctx context.Context, serviceName, operationName string, attrs ...attribute.KeyValue) (context.Context, oteltrace.Span) {
+	if serviceName == "" {
+		serviceName = DefaultServiceName
+	}
+
+	opts := []oteltrace.SpanStartOption{oteltrace.WithAttributes(attrs...)}
+	if !IsValidTraceContext(ctx) {
+		opts = append(opts, oteltrace.WithSpanKind(oteltrace.SpanKindServer))
+	}
+
+	return StartSpanWithService(ctx, serviceName, operationName, opts...)
+}
+
+// ========================= Span 辅助操作 =========================
+
+// RecordError 记录错误到 span
+func RecordError(span oteltrace.Span, err error) {
 	if span != nil && err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 	}
 }
 
-// SetSpanAttributes 设置span属性
-func SetSpanAttributes(span trace.Span, attrs map[string]interface{}) {
+// RecordSuccess 记录成功状态到 span
+func RecordSuccess(span oteltrace.Span) {
+	if span != nil {
+		span.SetStatus(codes.Ok, "success")
+	}
+}
+
+// RecordErrorWithContext 从 context 记录错误
+func RecordErrorWithContext(ctx context.Context, err error) {
+	RecordError(oteltrace.SpanFromContext(ctx), err)
+}
+
+// RecordSuccessWithContext 从 context 记录成功
+func RecordSuccessWithContext(ctx context.Context) {
+	RecordSuccess(oteltrace.SpanFromContext(ctx))
+}
+
+// SetSpanAttributes 设置 span 属性
+func SetSpanAttributes(span oteltrace.Span, attrs map[string]interface{}) {
 	if span == nil {
 		return
 	}
 
+	attributes := make([]attribute.KeyValue, 0, len(attrs))
 	for k, v := range attrs {
 		switch val := v.(type) {
 		case string:
-			span.SetAttributes(attribute.String(k, val))
+			attributes = append(attributes, attribute.String(k, val))
 		case int:
-			span.SetAttributes(attribute.Int(k, val))
+			attributes = append(attributes, attribute.Int(k, val))
 		case int64:
-			span.SetAttributes(attribute.Int64(k, val))
+			attributes = append(attributes, attribute.Int64(k, val))
 		case float64:
-			span.SetAttributes(attribute.Float64(k, val))
+			attributes = append(attributes, attribute.Float64(k, val))
 		case bool:
-			span.SetAttributes(attribute.Bool(k, val))
+			attributes = append(attributes, attribute.Bool(k, val))
 		default:
-			span.SetAttributes(attribute.String(k, fmt.Sprintf("%v", val)))
-		}
-	}
-}
-
-// InjectTraceToMessage 将trace信息注入到消息属性中
-func InjectTraceToMessage(ctx context.Context, properties map[string]string) map[string]string {
-	if properties == nil {
-		properties = make(map[string]string)
-	}
-
-	spanCtx := trace.SpanContextFromContext(ctx)
-	if spanCtx.HasTraceID() {
-		properties[MessageTraceID] = spanCtx.TraceID().String()
-	}
-	if spanCtx.HasSpanID() {
-		properties[MessageSpanID] = spanCtx.SpanID().String()
-	}
-
-	return properties
-}
-
-// ExtractTraceFromMessage 从消息属性中提取trace信息
-func ExtractTraceFromMessage(ctx context.Context, properties map[string]string) context.Context {
-	if properties == nil {
-		return ctx
-	}
-
-	traceIDStr := properties[MessageTraceID]
-	spanIDStr := properties[MessageSpanID]
-
-	if traceIDStr == "" {
-		return ctx
-	}
-
-	// 解析trace ID
-	traceID, err := trace.TraceIDFromHex(traceIDStr)
-	if err != nil {
-		return ctx
-	}
-
-	// 解析span ID
-	var spanID trace.SpanID
-	if spanIDStr != "" {
-		spanID, err = trace.SpanIDFromHex(spanIDStr)
-		if err != nil {
-			return ctx
+			attributes = append(attributes, attribute.String(k, fmt.Sprintf("%v", val)))
 		}
 	}
 
-	// 创建span context
-	spanCtx := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    traceID,
-		SpanID:     spanID,
-		TraceFlags: trace.FlagsSampled,
-	})
+	span.SetAttributes(attributes...)
+}
 
-	return trace.ContextWithSpanContext(ctx, spanCtx)
+// SetSpanAttributesWithContext 批量设置 span 属性
+func SetSpanAttributesWithContext(ctx context.Context, attrs map[string]interface{}) {
+	SetSpanAttributes(oteltrace.SpanFromContext(ctx), attrs)
+}
+
+// AddEvent 添加事件到 span
+func AddEvent(span oteltrace.Span, name string, attrs ...attribute.KeyValue) {
+	if span != nil {
+		span.AddEvent(name, oteltrace.WithAttributes(attrs...))
+	}
+}
+
+// AddEventWithContext 从 context 添加事件
+func AddEventWithContext(ctx context.Context, name string, attrs ...attribute.KeyValue) {
+	AddEvent(oteltrace.SpanFromContext(ctx), name, attrs...)
 }

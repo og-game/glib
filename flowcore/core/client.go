@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/og-game/glib/flowcore/config"
-	"github.com/og-game/glib/flowcore/pkg"
+	"github.com/og-game/glib/flowcore/logger"
 	"go.temporal.io/sdk/log"
 	"os"
 	"sync"
@@ -44,46 +44,15 @@ func NewClient(ctx context.Context, cfg *config.Config) (client.Client, error) {
 		}
 	}
 
-	options := client.Options{
-		HostPort:  cfg.HostPort,
-		Namespace: cfg.Namespace,
-	}
+	options := buildClientOptions(cfg)
 
-	// Set identity
-	if cfg.Identity != "" {
-		options.Identity = cfg.Identity
-	} else {
-		hostname, _ := os.Hostname()
-		options.Identity = fmt.Sprintf("temporal-worker@%s", hostname)
-	}
-
-	// Configure TLS
-	if cfg.TLS.Enabled {
-		tlsConfig, err := cfg.TLS.GetTLSConfig()
-		if err != nil {
-			return nil, fmt.Errorf("failed to configure TLS: %w", err)
+	// 配置日志
+	if options.Logger == nil {
+		if os.Getenv("ENV") == "production" {
+			options.Logger = logger.NewProductionLogger()
+		} else {
+			options.Logger = logger.NewDevelopmentLogger("info")
 		}
-		options.ConnectionOptions = client.ConnectionOptions{
-			TLS: tlsConfig,
-		}
-	}
-
-	// Configure data converter
-	switch cfg.DataConverter {
-	case "proto":
-		options.DataConverter = converter.NewCompositeDataConverter(
-			converter.NewProtoPayloadConverter(),
-			converter.NewJSONPayloadConverter(),
-		)
-	default:
-		options.DataConverter = converter.GetDefaultDataConverter()
-	}
-
-	// Configure zap logger based on environment
-	if os.Getenv("ENV") == "production" {
-		options.Logger = pkg.NewProductionLogger()
-	} else {
-		options.Logger = pkg.NewDevelopmentLogger("info")
 	}
 
 	return client.DialContext(ctx, options)
@@ -95,13 +64,20 @@ func NewClientWithLogger(ctx context.Context, cfg *config.Config, logger log.Log
 		return nil, fmt.Errorf("temporal client is disabled")
 	}
 
+	options := buildClientOptions(cfg)
+	options.Logger = logger
+
+	return client.DialContext(ctx, options)
+}
+
+// buildClientOptions 构建客户端选项
+func buildClientOptions(cfg *config.Config) client.Options {
 	options := client.Options{
 		HostPort:  cfg.HostPort,
 		Namespace: cfg.Namespace,
-		Logger:    logger,
 	}
 
-	// Set identity
+	// 设置身份标识
 	if cfg.Identity != "" {
 		options.Identity = cfg.Identity
 	} else {
@@ -109,18 +85,16 @@ func NewClientWithLogger(ctx context.Context, cfg *config.Config, logger log.Log
 		options.Identity = fmt.Sprintf("temporal-worker@%s", hostname)
 	}
 
-	// Configure TLS
+	// 配置 TLS
 	if cfg.TLS.Enabled {
-		tlsConfig, err := cfg.TLS.GetTLSConfig()
-		if err != nil {
-			return nil, fmt.Errorf("failed to configure TLS: %w", err)
-		}
-		options.ConnectionOptions = client.ConnectionOptions{
-			TLS: tlsConfig,
+		if tlsConfig, err := cfg.TLS.GetTLSConfig(); err == nil {
+			options.ConnectionOptions = client.ConnectionOptions{
+				TLS: tlsConfig,
+			}
 		}
 	}
 
-	// Configure data converter
+	// 配置数据转换器
 	switch cfg.DataConverter {
 	case "proto":
 		options.DataConverter = converter.NewCompositeDataConverter(
@@ -131,7 +105,7 @@ func NewClientWithLogger(ctx context.Context, cfg *config.Config, logger log.Log
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
 
-	return client.DialContext(ctx, options)
+	return options
 }
 
 // RegisterClient 注册一个带有名称的客户端

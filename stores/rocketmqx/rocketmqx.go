@@ -35,8 +35,14 @@ func (r *RocketMqx) createBaseConfig() *golang.Config {
 	}
 }
 
-func (r *RocketMqx) NewProducer() (producer golang.Producer, err error) {
-	producer, err = golang.NewProducer(r.createBaseConfig())
+func (r *RocketMqx) NewProducer(options ...ProducerOption) (producer golang.Producer, err error) {
+
+	var rocketmqOpts []golang.ProducerOption
+	for _, opt := range options {
+		rocketmqOpts = opt(rocketmqOpts)
+	}
+
+	producer, err = golang.NewProducer(r.createBaseConfig(), rocketmqOpts...)
 	if err != nil {
 		logx.Errorf("NewProducer err: %s", err.Error())
 		return
@@ -81,45 +87,77 @@ func (r *RocketMqx) NewConsumer(handler PullMessageHandler) (err error) {
 // 处理消息的逻辑提取到单独的函数中
 func (r *RocketMqx) processMessages(consumer golang.SimpleConsumer, handler PullMessageHandler, topic string) {
 	for {
-		ctx, cancel := context.WithTimeout(
+		// 1. 拉取消息 - Receive超时设置为 AwaitDuration + 5秒buffer
+		receiveCtx, receiveCancel := context.WithTimeout(
 			context.Background(),
-			time.Duration(r.config.ConsumerConfig.AwaitDuration*2)*time.Second,
+			time.Duration(r.config.ConsumerConfig.AwaitDuration+5)*time.Second,
 		)
-		sleepTime := time.Duration(r.config.ConsumerConfig.AwaitDuration/2) * time.Second
-
 		mvs, err := consumer.Receive(
-			ctx,
+			receiveCtx,
 			int32(r.config.ConsumerConfig.PullBatchSize),
 			time.Duration(r.config.ConsumerConfig.InvisibleDuration)*time.Second,
 		)
+		receiveCancel()
 
+		// 2. 处理拉取错误
 		if err != nil {
-			cancel()
 			if strings.Contains(err.Error(), v2.Code_name[int32(v2.Code_MESSAGE_NOT_FOUND)]) {
-				time.Sleep(sleepTime)
+				// 无消息时短暂休眠
+				time.Sleep(time.Duration(r.config.ConsumerConfig.AwaitDuration/3) * time.Second)
 				continue
 			}
 			logx.Errorf("拉取消息失败，topic:%s,原因为:%s", topic, err.Error())
-			time.Sleep(sleepTime)
+			time.Sleep(time.Duration(r.config.ConsumerConfig.AwaitDuration/2) * time.Second)
 			continue
 		}
 
-		// 处理消息
-		res, err := handler(ctx, mvs...)
-		if err != nil {
-			cancel()
-			logx.Errorf("处理消息失败,topic:%s,原因为：%s", topic, err.Error())
-			time.Sleep(sleepTime)
-			continue
-		}
+		// 3. 处理消息 - 使用 InvisibleDuration 作为处理超时
+		handlerCtx, handlerCancel := context.WithTimeout(
+			context.Background(),
+			time.Duration(r.config.ConsumerConfig.InvisibleDuration)*time.Second,
+		)
 
-		// 如果全部成功，确认消息
-		if res {
+		res, err := handler(handlerCtx, mvs...)
+		handlerCancel()
+
+		// 4. ACK确认
+		if res && err == nil {
+			// ACK使用独立的短超时context
+			ackCtx, ackCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			for _, mv := range mvs {
-				if err = consumer.Ack(ctx, mv); err != nil {
-					logx.Errorf("ack message failed, reason: %s, msgID:%s", err.Error(), mv.GetMessageId())
+				if ackErr := consumer.Ack(ackCtx, mv); ackErr != nil {
+					logx.Errorf("ack message failed, reason: %s, msgID:%s", ackErr.Error(), mv.GetMessageId())
 				}
 			}
+			ackCancel()
+		} else if err != nil {
+			logx.Errorf("处理消息失败,topic:%s,原因为：%s", topic, err.Error())
+			// 处理失败短暂休眠
+			time.Sleep(time.Second)
 		}
+	}
+}
+
+// ProducerOption 定义生产者选项
+type ProducerOption func([]golang.ProducerOption) []golang.ProducerOption
+
+// WithMaxAttempts 设置最大重试次数
+func WithMaxAttempts(attempts int32) ProducerOption {
+	return func(opts []golang.ProducerOption) []golang.ProducerOption {
+		return append(opts, golang.WithMaxAttempts(attempts))
+	}
+}
+
+// WithTopics 预声明主题
+func WithTopics(topics ...string) ProducerOption {
+	return func(opts []golang.ProducerOption) []golang.ProducerOption {
+		return append(opts, golang.WithTopics(topics...))
+	}
+}
+
+// WithTransactionChecker 设置事务检查器
+func WithTransactionChecker(checker *golang.TransactionChecker) ProducerOption {
+	return func(opts []golang.ProducerOption) []golang.ProducerOption {
+		return append(opts, golang.WithTransactionChecker(checker))
 	}
 }
