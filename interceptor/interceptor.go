@@ -38,6 +38,7 @@ func ServerTenantInterceptor() grpc.UnaryServerInterceptor {
 		resp, err := handler(ctx, req)
 		// 记录错误
 		if err != nil {
+			// note 这个可以取消因为是go-zero
 			tracex.RecordError(span, err)
 		}
 
@@ -79,6 +80,7 @@ func ServerTenantStreamInterceptor() grpc.StreamServerInterceptor {
 		err := handler(srv, wrappedStream)
 		// 记录错误
 		if err != nil {
+			// note 这个可以取消因为是go-zero
 			tracex.RecordError(span, err)
 		}
 
@@ -121,6 +123,7 @@ func ClientTenantInterceptor() grpc.UnaryClientInterceptor {
 		// 设置商户信息到gRPC metadata
 		ctx = metadata.WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx, merchantID, currencyCode, merchantUserID)
 
+		// note 这个可以取消因为是go-zero
 		// 注入trace信息到gRPC metadata
 		ctx = metadata.InjectTraceToGRPCMetadata(ctx)
 
@@ -128,6 +131,7 @@ func ClientTenantInterceptor() grpc.UnaryClientInterceptor {
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		// 记录错误
 		if err != nil {
+			// note 这个可以取消因为是go-zero
 			tracex.RecordError(span, err)
 		}
 
@@ -158,12 +162,14 @@ func ClientTenantStreamInterceptor() grpc.StreamClientInterceptor {
 		// 设置商户信息到gRPC metadata
 		ctx = metadata.WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx, merchantID, currencyCode, merchantUserID)
 
+		// note 这个可以取消因为是go-zero
 		// 注入trace信息到gRPC metadata
 		ctx = metadata.InjectTraceToGRPCMetadata(ctx)
 
 		stream, err := streamer(ctx, desc, cc, method, opts...)
 		// 记录错误
 		if err != nil {
+			// note 这个可以取消因为是go-zero
 			tracex.RecordError(span, err)
 		}
 
