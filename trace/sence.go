@@ -162,14 +162,44 @@ func CreateMQProducerSpan(ctx context.Context, topic string, messageCount int) (
 }
 
 // CreateMQConsumerSpan 创建 MQ 消费者 span
+//func CreateMQConsumerSpan(ctx context.Context, topic string, messageCount int) (context.Context, oteltrace.Span) {
+//	return StartSpanWithService(ctx, "mq-consumer",
+//		fmt.Sprintf("mq.consume.%s", topic),
+//		oteltrace.WithSpanKind(oteltrace.SpanKindConsumer),
+//		oteltrace.WithAttributes(
+//			attribute.String("messaging.system", "rocketmq"),
+//			attribute.String("messaging.destination", topic),
+//			attribute.String("messaging.operation", "consume"),
+//			attribute.Int("messaging.batch.message_count", messageCount),
+//		))
+//}
+
 func CreateMQConsumerSpan(ctx context.Context, topic string, messageCount int) (context.Context, oteltrace.Span) {
-	return StartSpanWithService(ctx, "mq-consumer",
-		fmt.Sprintf("mq.consume.%s", topic),
+	// 提取producer的span context用于创建link
+	producerSpanCtx := oteltrace.SpanContextFromContext(ctx)
+
+	opts := []oteltrace.SpanStartOption{
 		oteltrace.WithSpanKind(oteltrace.SpanKindConsumer),
 		oteltrace.WithAttributes(
 			attribute.String("messaging.system", "rocketmq"),
 			attribute.String("messaging.destination", topic),
-			attribute.String("messaging.operation", "consume"),
+			attribute.String("messaging.operation", "receive"),
 			attribute.Int("messaging.batch.message_count", messageCount),
-		))
+		),
+	}
+
+	// 如果有有效的producer span context，使用Link
+	if producerSpanCtx.IsValid() {
+		opts = append(opts, oteltrace.WithLinks(oteltrace.Link{
+			SpanContext: producerSpanCtx,
+			Attributes: []attribute.KeyValue{
+				attribute.String("link.type", "producer"),
+			},
+		}))
+		// 创建新的root span（关键改动）
+		ctx = context.Background()
+	}
+
+	return StartSpanWithService(ctx, "mq-consumer",
+		fmt.Sprintf("%s receive", topic), opts...)
 }

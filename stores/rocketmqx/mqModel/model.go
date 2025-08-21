@@ -11,6 +11,7 @@ type (
 		PlatformID         int64  `json:"platform_id"`
 		OriginalPlatformID int64  `json:"original_platform_id" `
 		OriginalGameID     int64  `json:"original_game_id" `
+		IsDiversion        int8   `json:"is_diversion"` // 是否切流：1-开启切流，2-不开启切流
 		MerchantID         int64  `json:"merchant_id"`
 		MerchantUserID     string `json:"merchant_user_id"`
 		DeviceID           string `json:"device_id"`
