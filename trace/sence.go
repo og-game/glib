@@ -165,8 +165,9 @@ func CreateMQProducerSpan(ctx context.Context, topic string, messageCount int) (
 
 // CreateMQConsumerSpan 创建 MQ 消费者 span（默认使用Parent-Child，更实用）
 func CreateMQConsumerSpan(ctx context.Context, topic string, messageCount int) (context.Context, oteltrace.Span) {
+	consumerID := generateShortID()
 	// 生成唯一ID避免span名称冲突（支持一对多消费）
-	spanName := fmt.Sprintf("%s receive [%s]", topic, generateShortID())
+	spanName := fmt.Sprintf("%s receive [%s]", topic, consumerID)
 
 	return StartSpanWithService(ctx, "mq-consumer",
 		spanName,
@@ -177,7 +178,7 @@ func CreateMQConsumerSpan(ctx context.Context, topic string, messageCount int) (
 			attribute.String("messaging.destination_kind", "topic"),
 			attribute.String("messaging.operation", "receive"),
 			attribute.Int("messaging.batch.message_count", messageCount),
-			attribute.String("messaging.consumer.id", generateShortID()),
+			attribute.String("messaging.consumer.id", consumerID),
 		))
 }
 
