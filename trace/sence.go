@@ -122,9 +122,8 @@ func EnsureTraceForMQConsume(ctx context.Context, properties map[string]string, 
 
 	// 创建新的 trace
 	ctx, span := EnsureTraceContext(ctx, "mq-consumer",
-		fmt.Sprintf("%s receive", topic),
-		attribute.String("messaging.system", "rocketmq"),
-		attribute.String("messaging.destination", topic),
+		fmt.Sprintf("mq.consume.%s", topic),
+		attribute.String("mq.topic", topic),
 		attribute.String("trigger.type", "mq"),
 	)
 	traceID := GetTraceIDFromCtx(ctx)
