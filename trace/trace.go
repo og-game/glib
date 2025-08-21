@@ -13,10 +13,6 @@ import (
 )
 
 const (
-	// MQ 消息中的 trace 字段
-	MessageTraceID = "__TRACE_ID__"
-	MessageSpanID  = "__SPAN_ID__"
-
 	// 默认服务名
 	DefaultServiceName = "default-lib"
 )

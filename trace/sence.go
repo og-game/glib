@@ -3,7 +3,9 @@ package trace
 import (
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -133,14 +135,7 @@ func InjectTraceToMessage(ctx context.Context, properties map[string]string) map
 	if properties == nil {
 		properties = make(map[string]string)
 	}
-
-	if traceID := GetTraceIDFromCtx(ctx); traceID != "" {
-		properties[MessageTraceID] = traceID
-		if spanID := GetSpanIDFromCtx(ctx); spanID != "" {
-			properties[MessageSpanID] = spanID
-		}
-	}
-
+	otel.GetTextMapPropagator().Inject(ctx, propagation.MapCarrier(properties))
 	return properties
 }
 
@@ -150,11 +145,7 @@ func ExtractTraceFromMessage(ctx context.Context, properties map[string]string) 
 		return ctx
 	}
 
-	if traceID, ok := properties[MessageTraceID]; ok && traceID != "" {
-		return RestoreTraceContext(ctx, traceID, properties[MessageSpanID])
-	}
-
-	return ctx
+	return otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(properties))
 }
 
 // CreateMQProducerSpan 创建 MQ 生产者 span
