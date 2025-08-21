@@ -3,6 +3,7 @@ package trace
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -121,8 +122,9 @@ func EnsureTraceForMQConsume(ctx context.Context, properties map[string]string, 
 
 	// 创建新的 trace
 	ctx, span := EnsureTraceContext(ctx, "mq-consumer",
-		fmt.Sprintf("mq.consume.%s", topic),
-		attribute.String("mq.topic", topic),
+		fmt.Sprintf("%s receive", topic),
+		attribute.String("messaging.system", "rocketmq"),
+		attribute.String("messaging.destination", topic),
 		attribute.String("trigger.type", "mq"),
 	)
 	traceID := GetTraceIDFromCtx(ctx)
@@ -151,55 +153,40 @@ func ExtractTraceFromMessage(ctx context.Context, properties map[string]string) 
 // CreateMQProducerSpan 创建 MQ 生产者 span
 func CreateMQProducerSpan(ctx context.Context, topic string, messageCount int) (context.Context, oteltrace.Span) {
 	return StartSpanWithService(ctx, "mq-producer",
-		fmt.Sprintf("mq.send.%s", topic),
+		fmt.Sprintf("%s send", topic),
 		oteltrace.WithSpanKind(oteltrace.SpanKindProducer),
 		oteltrace.WithAttributes(
 			attribute.String("messaging.system", "rocketmq"),
 			attribute.String("messaging.destination", topic),
+			attribute.String("messaging.destination_kind", "topic"),
 			attribute.String("messaging.operation", "send"),
 			attribute.Int("messaging.batch.message_count", messageCount),
 		))
 }
 
-// CreateMQConsumerSpan 创建 MQ 消费者 span
-//func CreateMQConsumerSpan(ctx context.Context, topic string, messageCount int) (context.Context, oteltrace.Span) {
-//	return StartSpanWithService(ctx, "mq-consumer",
-//		fmt.Sprintf("mq.consume.%s", topic),
-//		oteltrace.WithSpanKind(oteltrace.SpanKindConsumer),
-//		oteltrace.WithAttributes(
-//			attribute.String("messaging.system", "rocketmq"),
-//			attribute.String("messaging.destination", topic),
-//			attribute.String("messaging.operation", "consume"),
-//			attribute.Int("messaging.batch.message_count", messageCount),
-//		))
-//}
-
+// CreateMQConsumerSpan 创建 MQ 消费者 span（默认使用Parent-Child，更实用）
 func CreateMQConsumerSpan(ctx context.Context, topic string, messageCount int) (context.Context, oteltrace.Span) {
-	// 提取producer的span context用于创建link
-	producerSpanCtx := oteltrace.SpanContextFromContext(ctx)
+	// 生成唯一ID避免span名称冲突（支持一对多消费）
+	spanName := fmt.Sprintf("%s receive [%s]", topic, generateShortID())
 
-	opts := []oteltrace.SpanStartOption{
+	return StartSpanWithService(ctx, "mq-consumer",
+		spanName,
 		oteltrace.WithSpanKind(oteltrace.SpanKindConsumer),
 		oteltrace.WithAttributes(
 			attribute.String("messaging.system", "rocketmq"),
 			attribute.String("messaging.destination", topic),
+			attribute.String("messaging.destination_kind", "topic"),
 			attribute.String("messaging.operation", "receive"),
 			attribute.Int("messaging.batch.message_count", messageCount),
-		),
-	}
+			attribute.String("messaging.consumer.id", generateShortID()),
+		))
+}
 
-	// 如果有有效的producer span context，使用Link
-	if producerSpanCtx.IsValid() {
-		opts = append(opts, oteltrace.WithLinks(oteltrace.Link{
-			SpanContext: producerSpanCtx,
-			Attributes: []attribute.KeyValue{
-				attribute.String("link.type", "producer"),
-			},
-		}))
-		// 创建新的root span（关键改动）
-		ctx = context.Background()
-	}
+// ========================= 辅助函数 =========================
 
-	return StartSpanWithService(ctx, "mq-consumer",
-		fmt.Sprintf("%s receive", topic), opts...)
+// generateShortID 生成短ID用于区分span
+func generateShortID() string {
+	// 使用UUID的前8位
+	id := uuid.New().String()
+	return id[:8]
 }
