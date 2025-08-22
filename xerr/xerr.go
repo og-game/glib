@@ -3,167 +3,128 @@ package xerr
 import (
 	"errors"
 	"fmt"
-	"runtime"
-	"strings"
 )
 
-// XErr 自定义错误结构
+// Code 错误码类型
+type Code int
+
+func (c Code) Int() int {
+	return int(c)
+}
+
+// XErr 错误实现
 type XErr struct {
-	Code  int32  `json:"code"` // 错误码
-	Msg   string `json:"msg"`  // 错误信息
-	Cause error  `json:"-"`    // 原始错误
-	Stack string `json:"-"`    // 调用栈
+	code    Code   // 错误码
+	message string // 错误消息
+	cause   error  // 原始错误
 }
 
 // Error 实现 error 接口
 func (e *XErr) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("[%d] %s: %v", e.Code, e.Msg, e.Cause)
+	if e.cause != nil {
+		return fmt.Sprintf("[%d] %s: %v", e.code, e.message, e.cause)
 	}
-	return fmt.Sprintf("[%d] %s", e.Code, e.Msg)
+	return fmt.Sprintf("[%d] %s", e.code, e.message)
 }
 
-// Unwrap 实现 errors.Unwrap
+// Code 获取错误码
+func (e *XErr) Code() Code {
+	return e.code
+}
+
+// Message 获取错误信息
+func (e *XErr) Message() string {
+	return e.message
+}
+
+// Unwrap 实现 errors.Unwrap 接口，支持 errors.Is 和 errors.As
 func (e *XErr) Unwrap() error {
-	return e.Cause
+	return e.cause
 }
 
-// WithCause 添加原因错误
-func (e *XErr) WithCause(cause error) *XErr {
-	e.Cause = cause
-	return e
-}
+// ================================
+// 构造函数
+// ================================
 
-// WithMessage 添加额外的错误信息
-func (e *XErr) WithMessage(msg string) *XErr {
-	if e.Msg != "" {
-		e.Msg = fmt.Sprintf("%s: %s", e.Msg, msg)
-	} else {
-		e.Msg = msg
-	}
-	return e
-}
-
-// WithMessagef 格式化添加错误信息
-func (e *XErr) WithMessagef(format string, args ...interface{}) *XErr {
-	return e.WithMessage(fmt.Sprintf(format, args...))
-}
-
-// GetCode 获取错误码
-func (e *XErr) GetCode() int32 {
-	return e.Code
-}
-
-// GetMsg 获取错误信息
-func (e *XErr) GetMsg() string {
-	return e.Msg
-}
-
-// GetStack 获取调用栈
-func (e *XErr) GetStack() string {
-	return e.Stack
-}
-
-// New 创建新的错误
-func New(code int32, msg string) *XErr {
+// New 创建新错误
+func New(code Code, message string) error {
 	return &XErr{
-		Code:  code,
-		Msg:   msg,
-		Stack: getStack(2),
+		code:    code,
+		message: message,
 	}
 }
 
-// Newf 创建格式化的错误
-func Newf(code int32, format string, args ...interface{}) *XErr {
+// Newf 创建格式化错误
+func Newf(code Code, format string, args ...interface{}) error {
 	return &XErr{
-		Code:  code,
-		Msg:   fmt.Sprintf(format, args...),
-		Stack: getStack(2),
+		code:    code,
+		message: fmt.Sprintf(format, args...),
 	}
 }
 
 // Wrap 包装错误
-func Wrap(err error, code int32, msg string) *XErr {
+func Wrap(err error, code Code, message string) error {
 	if err == nil {
 		return nil
 	}
 	return &XErr{
-		Code:  code,
-		Msg:   msg,
-		Cause: err,
-		Stack: getStack(2),
+		code:    code,
+		message: message,
+		cause:   err,
 	}
 }
 
-// Wrapf 格式化包装错误
-func Wrapf(err error, code int32, format string, args ...interface{}) *XErr {
+// Wrapf 包装并格式化错误
+func Wrapf(err error, code Code, format string, args ...interface{}) error {
 	if err == nil {
 		return nil
 	}
 	return &XErr{
-		Code:  code,
-		Msg:   fmt.Sprintf(format, args...),
-		Cause: err,
-		Stack: getStack(2),
+		code:    code,
+		message: fmt.Sprintf(format, args...),
+		cause:   err,
 	}
 }
 
-// getStack 获取调用栈信息
-func getStack(skip int) string {
-	var builder strings.Builder
-	for i := skip; i < skip+10; i++ {
-		pc, file, line, ok := runtime.Caller(i)
-		if !ok {
-			break
-		}
-		fn := runtime.FuncForPC(pc)
-		if fn == nil {
-			continue
-		}
-		// 简化文件路径
-		if idx := strings.LastIndex(file, "/"); idx != -1 {
-			file = file[idx+1:]
-		}
-		builder.WriteString(fmt.Sprintf("%s:%d %s()\n", file, line, fn.Name()))
-	}
-	return builder.String()
-}
+// ================================
+// 工具函数
+// ================================
 
-// Is 判断是否为指定错误码
-func Is(err error, code int32) bool {
+// Is 判断错误是否为指定错误码
+func Is(err error, code Code) bool {
 	if err == nil {
 		return false
 	}
+
 	var xe *XErr
-	ok := errors.As(err, &xe)
-	if !ok {
-		return false
+	if errors.As(err, &xe) {
+		return xe.code == code
 	}
-	return xe.Code == code
+	return false
 }
 
-// Code 获取错误码，如果不是 XErr 则返回 0
-func Code(err error) int32 {
+// GetCode 获取错误码
+func GetCode(err error) Code {
 	if err == nil {
-		return 0
+		return OK
 	}
+
 	var xe *XErr
-	ok := errors.As(err, &xe)
-	if !ok {
-		return 0
+	if errors.As(err, &xe) {
+		return xe.code
 	}
-	return xe.Code
+	return Unknown
 }
 
-// Message 获取错误信息
-func Message(err error) string {
+// GetMessage 获取错误消息
+func GetMessage(err error) string {
 	if err == nil {
 		return ""
 	}
+
 	var xe *XErr
-	ok := errors.As(err, &xe)
-	if !ok {
-		return err.Error()
+	if errors.As(err, &xe) {
+		return xe.message
 	}
-	return xe.Msg
+	return err.Error()
 }

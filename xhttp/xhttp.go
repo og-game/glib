@@ -47,7 +47,7 @@ func JsonBaseResponseCtx(ctx context.Context, w http.ResponseWriter, v any) {
 func getHttpStatusFromError(v any) int {
 	switch data := v.(type) {
 	case *xerr.XErr:
-		return mapCodeToHttpStatus(int(data.Code))
+		return mapCodeToHttpStatus(data.Code().Int())
 	case *errors.CodeMsg:
 		return mapCodeToHttpStatus(data.Code)
 	case errors.CodeMsg:
@@ -125,8 +125,8 @@ func wrapBaseResponse(v any, traceID string) BaseResponse[any] {
 
 	switch data := v.(type) {
 	case *xerr.XErr:
-		resp.Code = int(data.Code)
-		resp.Message = data.Msg
+		resp.Code = data.Code().Int()
+		resp.Message = data.Message()
 	case *errors.CodeMsg:
 		resp.Code = data.Code
 		resp.Message = data.Msg
