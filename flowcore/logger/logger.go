@@ -379,7 +379,7 @@ func createZapLogger(level LogLevel, config LoggerConfig) *zap.Logger {
 	if config.Format == "json" {
 		encoder = zapcore.NewJSONEncoder(encoderConfig)
 	} else {
-		encoderConfig.ConsoleSeparator = " | "
+		encoderConfig.ConsoleSeparator = " ║ "
 		encoder = zapcore.NewConsoleEncoder(encoderConfig)
 	}
 
