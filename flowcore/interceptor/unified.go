@@ -1,4 +1,3 @@
-// unified.go - 重构后的统一拦截器
 package interceptor
 
 import (
@@ -147,6 +146,15 @@ func (a *activityInbound) ExecuteActivity(
 	info := activity.GetInfo(ctx)
 	activityName := info.ActivityType.Name
 
+	a.config.Logger.Info("[Activity Interceptor] Starting activity execution",
+		"activity", activityName,
+		"workflow_id", info.WorkflowExecution.ID,
+		"run_id", info.WorkflowExecution.RunID,
+		"activity_id", info.ActivityID,
+		"attempt", info.Attempt,
+		"task_queue", info.TaskQueue,
+	)
+
 	// 增加并发计数
 	if a.collector != nil {
 		a.collector.IncrementConcurrentActivities()
@@ -170,6 +178,9 @@ func (a *activityInbound) ExecuteActivity(
 	// Trace: 从 Header 恢复 trace context
 	var span oteltrace.Span
 	if a.config.EnableTrace {
+		// 记录恢复前的状态
+		a.config.Logger.Info("[Activity Interceptor] Restoring context from header", "activity", activityName)
+
 		ctx = a.restoreContextFromHeader(ctx)
 		ctx, span = a.createActivitySpan(ctx, info)
 
@@ -229,13 +240,26 @@ func (a *activityInbound) ExecuteActivity(
 func (a *activityInbound) restoreContextFromHeader(ctx context.Context) context.Context {
 	header := interceptor.Header(ctx)
 	if header == nil {
+		a.config.Logger.Warn("[Activity Interceptor] No header found in context")
 		return ctx
 	}
 
 	contextData := extractContextFromHeader(header)
 	if contextData == nil {
+		a.config.Logger.Warn("[Activity Interceptor] No context data found in header")
 		return ctx
 	}
+
+	// 记录恢复的上下文信息
+	a.config.Logger.Info("[Activity Interceptor] Context data extracted from header",
+		"trace_id", contextData.TraceID,
+		"span_id", contextData.SpanID,
+		"merchant_id", contextData.MerchantID,
+		"currency_code", contextData.CurrencyCode,
+		"user_id", contextData.UserID,
+		"merchant_user_id", contextData.MerchantUserID,
+		"baggage_count", len(contextData.Baggage),
+	)
 
 	// 恢复 trace context
 	if contextData.TraceID != "" {
@@ -279,10 +303,21 @@ func (a *activityInbound) createActivitySpan(ctx context.Context, info activity.
 		attributes = append(attributes, attribute.String(k, v))
 	}
 
-	return tracer.Start(ctx,
+	ctx, span := tracer.Start(ctx,
 		fmt.Sprintf("activity.%s", info.ActivityType.Name),
 		oteltrace.WithSpanKind(oteltrace.SpanKindServer),
 		oteltrace.WithAttributes(attributes...))
+
+	if span != nil {
+		spanCtx := span.SpanContext()
+		a.config.Logger.Info("[Activity Interceptor] Span created",
+			"activity", info.ActivityType.Name,
+			"trace_id", spanCtx.TraceID().String(),
+			"span_id", spanCtx.SpanID().String(),
+		)
+	}
+
+	return ctx, span
 }
 
 type activityOutbound struct {
@@ -407,21 +442,66 @@ func (w *workflowInbound) extractWorkflowInfo() (name, id, runID, parentID strin
 func (w *workflowInbound) setupWorkflowTrace(ctx workflow.Context, workflowName, workflowID string) workflow.Context {
 	// 需要多重空值检查
 	if w.info == nil || w.info.Memo == nil || w.info.Memo.Fields == nil {
+		if w.logger != nil {
+			w.logger.Warn("[Workflow Interceptor] No Memo found in workflow info",
+				"has_info", w.info != nil,
+				"has_memo", w.info != nil && w.info.Memo != nil,
+				"has_fields", w.info != nil && w.info.Memo != nil && w.info.Memo.Fields != nil,
+			)
+		}
 		return ctx
 	}
 
+	// 记录 Memo 字段
+	if w.logger != nil {
+		fieldKeys := make([]string, 0, len(w.info.Memo.Fields))
+		for k := range w.info.Memo.Fields {
+			fieldKeys = append(fieldKeys, k)
+		}
+		w.logger.Info("[Workflow Interceptor] Memo fields found",
+			"field_count", len(w.info.Memo.Fields),
+			"field_keys", fieldKeys,
+		)
+	}
+
 	contextData := flowcorepkg.ExtractContextFromMemo(w.info.Memo)
+
+	if w.logger != nil {
+		if contextData != nil {
+			w.logger.Info("[Workflow Interceptor] Context data extracted from Memo",
+				"trace_id", contextData.TraceID,
+				"span_id", contextData.SpanID,
+				"merchant_id", contextData.MerchantID,
+				"currency_code", contextData.CurrencyCode,
+				"user_id", contextData.UserID,
+				"merchant_user_id", contextData.MerchantUserID,
+				"baggage", contextData.Baggage,
+				"is_valid", contextData.IsValid(),
+			)
+		}
+	}
 
 	// 检查 contextData 不为 nil 并且有效
 	if contextData != nil && contextData.IsValid() {
 		ctx = flowcorepkg.WorkflowContextWithData(ctx, contextData)
 
 		if w.logger != nil {
-			w.logger.Info("Workflow started with trace",
+			w.logger.Info("[Workflow Interceptor] Context data stored in workflow context",
 				"workflow_type", workflowName,
 				"workflow_id", workflowID,
-				"trace", contextData.TraceID,
-				"merchant_id", contextData.MerchantID)
+				"trace_id", contextData.TraceID,
+				"span_id", contextData.SpanID,
+				"merchant_id", contextData.MerchantID,
+				"currency_code", contextData.CurrencyCode,
+			)
+		}
+		// 验证存储是否成功  立即尝试读取以验证
+		verifyData := flowcorepkg.DataFromWorkflowContext(ctx)
+		if verifyData != nil {
+			w.logger.Info("[Workflow Interceptor] Context data verification successful",
+				"stored_trace_id", verifyData.TraceID,
+				"stored_merchant_id", verifyData.MerchantID,
+			)
 		}
 	}
 
@@ -514,6 +594,21 @@ func (w *workflowOutbound) injectContextToHeader(ctx workflow.Context, executeTy
 	}
 
 	contextData := flowcorepkg.DataFromWorkflowContext(ctx)
+
+	if w.logger != nil {
+		if contextData != nil {
+			w.logger.Info("[Workflow Outbound] Injecting context to header",
+				"execute_type", executeType,
+
+				"trace_id", contextData.TraceID,
+				"span_id", contextData.SpanID,
+				"merchant_id", contextData.MerchantID,
+				"user_id", contextData.UserID,
+				"baggage_count", len(contextData.Baggage),
+			)
+		}
+	}
+
 	if err := writeContextToHeader(contextData, header); err != nil {
 		// 安全地获取和使用 logger
 		_logger := workflow.GetLogger(ctx)
