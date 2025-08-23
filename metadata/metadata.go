@@ -88,11 +88,6 @@ func GetTraceFromCtx(ctx context.Context) (traceID, spanID string) {
 	return tracex.GetTraceIDFromCtx(ctx), tracex.GetSpanIDFromCtx(ctx)
 }
 
-// GetTraceLogger 获取带有trace信息的logger
-func GetTraceLogger(ctx context.Context) logx.Logger {
-	return logx.WithContext(ctx)
-}
-
 // WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata 设置商户ID 币种 商户用户id 到gRPC metadata
 func WithMerchantIDCurrencyCodeMerchantUserIDRpcMetadata(ctx context.Context, merchantID int64, currencyCode, merchantUserID string) context.Context {
 	md, ok := metadata.FromOutgoingContext(ctx)
