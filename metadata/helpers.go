@@ -19,9 +19,9 @@ func CopyTimeout(ctx context.Context, timeout time.Duration) (context.Context, c
 
 // ========================= 异步操作 =========================
 
-// Async 创建异步 context（5秒超时）
+// Async 创建异步 context（10秒超时）
 func Async(ctx context.Context) (context.Context, context.CancelFunc) {
-	return Extract(ctx).Timeout(5 * time.Second)
+	return Extract(ctx).Timeout(10 * time.Second)
 }
 
 // AsyncTimeout 创建指定超时的异步 context
@@ -33,7 +33,7 @@ func AsyncTimeout(ctx context.Context, timeout time.Duration) (context.Context, 
 func AsyncMerchant(ctx context.Context, merchantID int64, currencyCode string) (context.Context, context.CancelFunc) {
 	return Extract(ctx).
 		Merchant(merchantID, currencyCode).
-		Timeout(5 * time.Second)
+		Timeout(10 * time.Second)
 }
 
 // ========================= 快速创建 =========================
