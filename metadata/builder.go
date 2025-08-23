@@ -188,6 +188,19 @@ func CopyContextWithTimeout(ctx context.Context, timeout time.Duration) (context
 	return NewContextBuilder(ctx).BuildWithTimeout(timeout)
 }
 
+// UpdateContext 从现有 context 更新特定字段并创建新 context
+func UpdateContext(ctx context.Context, merchantID int64, currencyCode string, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return NewContextBuilder(ctx).
+		WithMerchantID(merchantID).
+		WithCurrencyCode(currencyCode).
+		BuildWithTimeout(timeout)
+}
+
+// AsyncContextWithData 为异步任务创建 context，更新商户信息
+func AsyncContextWithData(ctx context.Context, merchantID int64, currencyCode string) (context.Context, context.CancelFunc) {
+	return UpdateContext(ctx, merchantID, currencyCode, 5*time.Second)
+}
+
 // AsyncContext 为异步操作创建 context（默认5秒超时）
 func AsyncContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return CopyContextWithTimeout(ctx, 5*time.Second)
