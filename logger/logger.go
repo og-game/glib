@@ -21,31 +21,23 @@ func WithContext(ctx context.Context) *Logger {
 // ========================= 标记方法 =========================
 
 // MarkCritical 标记为关键
-func (l *Logger) MarkCritical() *Logger {
-	return &Logger{
-		Logger: l.Logger.WithFields(logx.Field("mark", "critical")),
-	}
+func (l *Logger) MarkCritical(value ...any) *Logger {
+	return l.mark("critical", value...)
 }
 
-// MarkBusiness 添加标记为业务
-func (l *Logger) MarkBusiness() *Logger {
-	return &Logger{
-		Logger: l.Logger.WithFields(logx.Field("mark", "business")),
-	}
+// MarkBusiness 标记为业务
+func (l *Logger) MarkBusiness(value ...any) *Logger {
+	return l.mark("business", value...)
 }
 
-// MarkSecurity 添加标记为安全
-func (l *Logger) MarkSecurity() *Logger {
-	return &Logger{
-		Logger: l.Logger.WithFields(logx.Field("mark", "security")),
-	}
+// MarkSecurity 标记为安全
+func (l *Logger) MarkSecurity(value ...any) *Logger {
+	return l.mark("security", value...)
 }
 
-// MarkAudit 添加标记为审计
-func (l *Logger) MarkAudit() *Logger {
-	return &Logger{
-		Logger: l.Logger.WithFields(logx.Field("mark", "audit")),
-	}
+// MarkAudit 标记为审计
+func (l *Logger) MarkAudit(value ...any) *Logger {
+	return l.mark("audit", value...)
 }
 
 // ========================= 扩展方法 =========================
@@ -75,5 +67,16 @@ func (l *Logger) WithDuration(d time.Duration) *Logger {
 func (l *Logger) WithCallerSkip(skip int) *Logger {
 	return &Logger{
 		Logger: l.Logger.WithCallerSkip(skip),
+	}
+}
+
+// mark 通用方法
+func (l *Logger) mark(defaultVal any, value ...any) *Logger {
+	val := defaultVal
+	if len(value) > 0 {
+		val = value[0]
+	}
+	return &Logger{
+		Logger: l.Logger.WithFields(logx.Field("mark", val)),
 	}
 }
