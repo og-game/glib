@@ -48,4 +48,12 @@ type (
 		DeviceOS           string          `json:"device_os"`         // 设备型号
 		ExtData            string          `json:"ext_data"`          // 扩展数据
 	}
+	// NoticeEventMQMessage 通知事件
+	NoticeEventMQMessage struct {
+		EventID    string `json:"event_id"`
+		MerchantID uint64 `json:"merchant_id"`
+		EventType  string `json:"event_type"`
+		Priority   uint8  `json:"priority"`
+		Timestamp  int64  `json:"timestamp"`
+	}
 )
