@@ -2,6 +2,9 @@ package core
 
 import (
 	"sync"
+
+	sdkactivity "go.temporal.io/sdk/activity"
+	sdkworkflow "go.temporal.io/sdk/workflow"
 )
 
 // Registry 管理工作流和活动的注册
@@ -22,7 +25,9 @@ type Module interface {
 // WorkerRegistry 用于 Worker 注册的接口
 type WorkerRegistry interface {
 	RegisterWorkflow(workflow interface{})
+	RegisterWorkflowWithOptions(workflow interface{}, options sdkworkflow.RegisterOptions)
 	RegisterActivity(activity interface{})
+	RegisterActivityWithOptions(activity interface{}, options sdkactivity.RegisterOptions)
 }
 
 var globalRegistry = NewRegistry()

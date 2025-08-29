@@ -3,13 +3,14 @@ package core
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/og-game/glib/flowcore/config"
 	flowcoreinterceptor "github.com/og-game/glib/flowcore/interceptor"
 	flowcorepkg "github.com/og-game/glib/flowcore/pkg"
 	sdkinterceptor "go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
-	"sync"
-	"time"
 
 	sdkactivity "go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
@@ -142,11 +143,9 @@ func (w *Worker) RegisterWorkflow(workflow interface{}) {
 	w.worker.RegisterWorkflow(workflow)
 }
 
-// RegisterWorkflowWithAlias 注册带别名的工作流
-func (w *Worker) RegisterWorkflowWithAlias(workflow interface{}, alias string) {
-	w.worker.RegisterWorkflowWithOptions(workflow, sdkworkflow.RegisterOptions{
-		Name: alias,
-	})
+// RegisterWorkflowWithOptions 注册带选项的工作流
+func (w *Worker) RegisterWorkflowWithOptions(workflow interface{}, options sdkworkflow.RegisterOptions) {
+	w.worker.RegisterWorkflowWithOptions(workflow, options)
 }
 
 // RegisterActivity 注册一个活动
