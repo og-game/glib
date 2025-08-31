@@ -2,14 +2,15 @@ package rocketmqx
 
 import (
 	"context"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/apache/rocketmq-clients/golang/v5"
 	"github.com/apache/rocketmq-clients/golang/v5/credentials"
 	v2 "github.com/apache/rocketmq-clients/golang/v5/protocol/v2"
 	"github.com/og-game/glib/utils"
 	"github.com/zeromicro/go-zero/core/logx"
-	"os"
-	"strings"
-	"time"
 )
 
 type RocketMqx struct {
@@ -103,11 +104,11 @@ func (r *RocketMqx) processMessages(consumer golang.SimpleConsumer, handler Pull
 		if err != nil {
 			if strings.Contains(err.Error(), v2.Code_name[int32(v2.Code_MESSAGE_NOT_FOUND)]) {
 				// 无消息时短暂休眠
-				time.Sleep(time.Duration(r.config.ConsumerConfig.AwaitDuration/3) * time.Second)
+				//time.Sleep(time.Duration(r.config.ConsumerConfig.AwaitDuration/3) * time.Second)
 				continue
 			}
 			logx.Errorf("拉取消息失败，topic:%s,原因为:%s", topic, err.Error())
-			time.Sleep(time.Duration(r.config.ConsumerConfig.AwaitDuration/2) * time.Second)
+			//time.Sleep(time.Duration(r.config.ConsumerConfig.AwaitDuration/2) * time.Second)
 			continue
 		}
 
@@ -133,7 +134,7 @@ func (r *RocketMqx) processMessages(consumer golang.SimpleConsumer, handler Pull
 		} else if err != nil {
 			logx.Errorf("处理消息失败,topic:%s,原因为：%s", topic, err.Error())
 			// 处理失败短暂休眠
-			time.Sleep(time.Second)
+			//time.Sleep(time.Second)
 		}
 	}
 }
