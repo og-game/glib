@@ -52,6 +52,7 @@ type (
 	NoticeEventMQMessage struct {
 		EventID    string `json:"event_id"`
 		MerchantID uint64 `json:"merchant_id"`
+		Category   string `json:"category"`
 		EventType  string `json:"event_type"`
 		Priority   uint8  `json:"priority"`
 		Timestamp  int64  `json:"timestamp"`
