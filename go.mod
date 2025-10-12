@@ -3,7 +3,7 @@ module github.com/og-game/glib
 go 1.24.0
 
 require (
-	github.com/apache/rocketmq-clients/golang/v5 v5.1.3
+	github.com/apache/rocketmq-clients/golang/v5 v5.1.2
 	github.com/dtm-labs/rockscache v0.1.1
 	github.com/go-redsync/redsync/v4 v4.14.0
 	github.com/go-resty/resty/v2 v2.16.5

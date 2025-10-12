@@ -37,8 +37,8 @@ github.com/alicebob/miniredis/v2 v2.35.0/go.mod h1:TcL7YfarKPGDAthEtl5NBeHZfeUQj
 github.com/andybalholm/brotli v1.2.0 h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
 github.com/andybalholm/brotli v1.2.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
-github.com/apache/rocketmq-clients/golang/v5 v5.1.3 h1:ooj+E/fX6oSKEABCHdMglxcQvFIde5VSwdwnP2Zph7s=
-github.com/apache/rocketmq-clients/golang/v5 v5.1.3/go.mod h1:qg/POLGOcuU33gPbi2yA6Ak4kTPydBBamrQU+bl0WMU=
+github.com/apache/rocketmq-clients/golang/v5 v5.1.2 h1:gHPH7WMogmQVTTI0Mco56XNKowCFsIDbC8+W14TledQ=
+github.com/apache/rocketmq-clients/golang/v5 v5.1.2/go.mod h1:RoBRj7DZc6hn02y2n/ji8/cimuJe/3c/q8szWXoIczA=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
