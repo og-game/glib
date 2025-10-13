@@ -42,13 +42,6 @@ func (r *RocketMqx) createBaseConfig() *golang.Config {
 func (r *RocketMqx) NewProducer(options ...ProducerOption) (producer golang.Producer, err error) {
 
 	var rocketmqOpts []golang.ProducerOption
-	rocketmqOpts = append(rocketmqOpts, golang.WithClientFunc(func(config *golang.Config, option ...golang.ClientOption) (golang.Client, error) {
-		return golang.NewClient(
-			config,
-			golang.WithConnOptions(golang.WithZapLogger(zap.NewNop())),
-			golang.WithRpcClientOptions(golang.WithRpcClientConnOption(golang.WithZapLogger(zap.NewNop()))),
-		)
-	}))
 	for _, opt := range options {
 		rocketmqOpts = opt(rocketmqOpts)
 	}
