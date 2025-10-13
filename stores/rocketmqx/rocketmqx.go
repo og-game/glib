@@ -52,7 +52,15 @@ func (r *RocketMqx) NewProducer(options ...ProducerOption) (producer golang.Prod
 			logx.Errorf("Failed to build zap logger: %s", e.Error())
 			return nil, e
 		}
-		return golang.NewClient(config, golang.WithConnOptions(golang.WithZapLogger(zapStdLogger)))
+		return golang.NewClient(
+			config,
+			golang.WithClientConnFunc(func(s string, option ...golang.ConnOption) (golang.ClientConn, error) {
+				if len(option) == 0 {
+					option = make([]golang.ConnOption, 0)
+				}
+				option = append(option, golang.WithZapLogger(zapStdLogger))
+				return golang.NewClientConn(s, option...)
+			}))
 	}))
 
 	producer, err = golang.NewProducer(
