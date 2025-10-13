@@ -83,6 +83,14 @@ func (r *RocketMqx) NewConsumer(handler PullMessageHandler) (err error) {
 		r.createBaseConfig(),
 		golang.WithAwaitDuration(time.Duration(r.config.ConsumerConfig.AwaitDuration)*time.Second),
 		golang.WithSubscriptionExpressions(relations),
+		golang.WithClientFuncForSimpleConsumer(func(config *golang.Config, option ...golang.ClientOption) (golang.Client, error) {
+			zapStdLogger, e := getZapStdLogger()
+			if e != nil {
+				logx.Errorf("Failed to build zap logger: %s", e.Error())
+				return nil, e
+			}
+			return golang.NewClient(config, golang.WithConnOptions(golang.WithZapLogger(zapStdLogger)))
+		}),
 	)
 	if err != nil {
 		logx.Errorf("初始化消费者失败，原因为：%s", err.Error())
