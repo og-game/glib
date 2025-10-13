@@ -12,7 +12,6 @@ import (
 	"github.com/og-game/glib/utils"
 	"github.com/zeromicro/go-zero/core/logx"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 type RocketMqx struct {
@@ -20,6 +19,7 @@ type RocketMqx struct {
 }
 
 func NewRocketMqx(config Config) *RocketMqx {
+	zap.ReplaceGlobals(zap.NewNop())
 	_ = os.Setenv("mq.consoleAppender.enabled", utils.Ternary(config.ConsoleAppenderEnabled, "true", "false"))
 	golang.ResetLogger()
 	return &RocketMqx{config: config}
@@ -45,23 +45,6 @@ func (r *RocketMqx) NewProducer(options ...ProducerOption) (producer golang.Prod
 	for _, opt := range options {
 		rocketmqOpts = opt(rocketmqOpts)
 	}
-
-	rocketmqOpts = append(rocketmqOpts, golang.WithClientFunc(func(config *golang.Config, option ...golang.ClientOption) (golang.Client, error) {
-		zapStdLogger, e := getZapStdLogger()
-		if e != nil {
-			logx.Errorf("Failed to build zap logger: %s", e.Error())
-			return nil, e
-		}
-		return golang.NewClient(
-			config,
-			golang.WithClientConnFunc(func(s string, option ...golang.ConnOption) (golang.ClientConn, error) {
-				if len(option) == 0 {
-					option = make([]golang.ConnOption, 0)
-				}
-				option = append(option, golang.WithZapLogger(zapStdLogger))
-				return golang.NewClientConn(s, option...)
-			}))
-	}))
 
 	producer, err = golang.NewProducer(
 		r.createBaseConfig(),
@@ -91,14 +74,6 @@ func (r *RocketMqx) NewConsumer(handler PullMessageHandler) (err error) {
 		r.createBaseConfig(),
 		golang.WithAwaitDuration(time.Duration(r.config.ConsumerConfig.AwaitDuration)*time.Second),
 		golang.WithSubscriptionExpressions(relations),
-		golang.WithClientFuncForSimpleConsumer(func(config *golang.Config, option ...golang.ClientOption) (golang.Client, error) {
-			zapStdLogger, e := getZapStdLogger()
-			if e != nil {
-				logx.Errorf("Failed to build zap logger: %s", e.Error())
-				return nil, e
-			}
-			return golang.NewClient(config, golang.WithConnOptions(golang.WithZapLogger(zapStdLogger)))
-		}),
 	)
 	if err != nil {
 		logx.Errorf("初始化消费者失败，原因为：%s", err.Error())
@@ -192,14 +167,4 @@ func WithTransactionChecker(checker *golang.TransactionChecker) ProducerOption {
 	return func(opts []golang.ProducerOption) []golang.ProducerOption {
 		return append(opts, golang.WithTransactionChecker(checker))
 	}
-}
-
-func getZapStdLogger() (*zap.Logger, error) {
-	// 创建 JSON 格式的控制台 Logger
-	zapConfig := zap.NewProductionConfig()
-	zapConfig.OutputPaths = []string{"stdout"}                 // 输出到控制台
-	zapConfig.ErrorOutputPaths = []string{"stderr"}            // 错误输出到 stderr
-	zapConfig.Encoding = "json"                                // JSON 格式
-	zapConfig.Level = zap.NewAtomicLevelAt(zapcore.ErrorLevel) // 可选：仅输出错误日志
-	return zapConfig.Build()
 }
