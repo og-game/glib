@@ -11,6 +11,8 @@ import (
 	v2 "github.com/apache/rocketmq-clients/golang/v5/protocol/v2"
 	"github.com/og-game/glib/utils"
 	"github.com/zeromicro/go-zero/core/logx"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type RocketMqx struct {
@@ -44,7 +46,19 @@ func (r *RocketMqx) NewProducer(options ...ProducerOption) (producer golang.Prod
 		rocketmqOpts = opt(rocketmqOpts)
 	}
 
-	producer, err = golang.NewProducer(r.createBaseConfig(), rocketmqOpts...)
+	rocketmqOpts = append(rocketmqOpts, golang.WithClientFunc(func(config *golang.Config, option ...golang.ClientOption) (golang.Client, error) {
+		zapStdLogger, e := getZapStdLogger()
+		if e != nil {
+			logx.Errorf("Failed to build zap logger: %s", e.Error())
+			return nil, e
+		}
+		return golang.NewClient(config, golang.WithConnOptions(golang.WithZapLogger(zapStdLogger)))
+	}))
+
+	producer, err = golang.NewProducer(
+		r.createBaseConfig(),
+		rocketmqOpts...,
+	)
 	if err != nil {
 		logx.Errorf("NewProducer err: %s", err.Error())
 		return
@@ -162,4 +176,14 @@ func WithTransactionChecker(checker *golang.TransactionChecker) ProducerOption {
 	return func(opts []golang.ProducerOption) []golang.ProducerOption {
 		return append(opts, golang.WithTransactionChecker(checker))
 	}
+}
+
+func getZapStdLogger() (*zap.Logger, error) {
+	// 创建 JSON 格式的控制台 Logger
+	zapConfig := zap.NewProductionConfig()
+	zapConfig.OutputPaths = []string{"stdout"}                 // 输出到控制台
+	zapConfig.ErrorOutputPaths = []string{"stderr"}            // 错误输出到 stderr
+	zapConfig.Encoding = "json"                                // JSON 格式
+	zapConfig.Level = zap.NewAtomicLevelAt(zapcore.ErrorLevel) // 可选：仅输出错误日志
+	return zapConfig.Build()
 }
