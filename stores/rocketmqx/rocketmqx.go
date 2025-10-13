@@ -19,6 +19,7 @@ type RocketMqx struct {
 
 func NewRocketMqx(config Config) *RocketMqx {
 	_ = os.Setenv("mq.consoleAppender.enabled", utils.Ternary(config.ConsoleAppenderEnabled, "true", "false"))
+	golang.ResetLogger()
 	return &RocketMqx{config: config}
 }
 
