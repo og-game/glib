@@ -19,9 +19,9 @@ type RocketMqx struct {
 }
 
 func NewRocketMqx(config Config) *RocketMqx {
-	zap.ReplaceGlobals(zap.NewNop())
 	_ = os.Setenv("mq.consoleAppender.enabled", utils.Ternary(config.ConsoleAppenderEnabled, "true", "false"))
 	golang.ResetLogger()
+	zap.ReplaceGlobals(zap.NewNop())
 	return &RocketMqx{config: config}
 }
 
