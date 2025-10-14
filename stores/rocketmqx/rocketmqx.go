@@ -11,7 +11,6 @@ import (
 	v2 "github.com/apache/rocketmq-clients/golang/v5/protocol/v2"
 	"github.com/og-game/glib/utils"
 	"github.com/zeromicro/go-zero/core/logx"
-	"go.uber.org/zap"
 )
 
 type RocketMqx struct {
@@ -21,7 +20,6 @@ type RocketMqx struct {
 func NewRocketMqx(config Config) *RocketMqx {
 	_ = os.Setenv("mq.consoleAppender.enabled", utils.Ternary(config.ConsoleAppenderEnabled, "true", "false"))
 	golang.ResetLogger()
-	zap.ReplaceGlobals(zap.NewNop())
 	return &RocketMqx{config: config}
 }
 
