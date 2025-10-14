@@ -31,6 +31,9 @@ require (
 	gorm.io/plugin/soft_delete v1.2.1
 )
 
+replace github.com/apache/rocketmq-clients/golang/v5 => ./pkg/rocketmq/v5.1.2
+
+
 require (
 	contrib.go.opencensus.io/exporter/ocagent v0.7.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
