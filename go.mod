@@ -31,7 +31,7 @@ require (
 	gorm.io/plugin/soft_delete v1.2.1
 )
 
-replace github.com/apache/rocketmq-clients/golang/v5 => ./pkg/rocketmq/v5.1.2
+replace github.com/apache/rocketmq-clients/golang/v5 => ./pkg/rocketmq/v5
 
 
 require (
