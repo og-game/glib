@@ -3,7 +3,7 @@ module github.com/og-game/glib
 go 1.24.0
 
 require (
-	github.com/apache/rocketmq-clients/golang/v5 v5.1.1-rc1
+	github.com/apache/rocketmq-clients/golang/v5 v5.1.2
 	github.com/dtm-labs/rockscache v0.1.1
 	github.com/go-redsync/redsync/v4 v4.14.0
 	github.com/go-resty/resty/v2 v2.16.5
@@ -32,7 +32,6 @@ require (
 )
 
 replace github.com/apache/rocketmq-clients/golang/v5 => ./pkg/rocketmq/v5
-
 
 require (
 	contrib.go.opencensus.io/exporter/ocagent v0.7.0 // indirect
@@ -86,6 +85,7 @@ require (
 	github.com/openzipkin/zipkin-go v0.4.3 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
+	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.21.1 // indirect
