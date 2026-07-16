@@ -128,12 +128,14 @@ func (r *RocketMqx) processMessages(consumer golang.SimpleConsumer, handler Pull
 		// 4. ACK确认
 		if res && err == nil {
 			// ACK使用独立的短超时context
+			start := time.Now()
 			ackCtx, ackCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			for _, mv := range mvs {
 				if ackErr := consumer.Ack(ackCtx, mv); ackErr != nil {
 					logx.Errorf("ack message failed, reason: %s, msgID:%s", ackErr.Error(), mv.GetMessageId())
 				}
 			}
+			logx.Debugf("ack message success, topic:%s,count:%d, cost:%dms", topic, len(mvs), time.Since(start).Milliseconds())
 			ackCancel()
 		} else if err != nil {
 			logx.Errorf("处理消息失败,topic:%s,原因为：%s", topic, err.Error())
