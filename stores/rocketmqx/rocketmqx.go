@@ -145,7 +145,7 @@ func (r *RocketMqx) processMessages(consumer golang.SimpleConsumer, handler Pull
 			//		logx.Errorf("ack message failed, reason: %s, msgID:%s", ackErr.Error(), mv.GetMessageId())
 			//	}
 			//}
-			logx.Debugf("ack message success, topic:%s,count:%d, cost:%dms", topic, len(mvs), time.Since(start).Milliseconds())
+			logx.Infof("ack message success, topic:%s,count:%d, cost:%dms", topic, len(mvs), time.Since(start).Milliseconds())
 			ackCancel()
 		} else if err != nil {
 			logx.Errorf("处理消息失败,topic:%s,原因为：%s", topic, err.Error())
