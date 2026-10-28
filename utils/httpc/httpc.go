@@ -2,6 +2,8 @@ package httpc
 
 import (
 	"context"
+	"errors"
+	"syscall"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cast"
@@ -23,7 +25,12 @@ func Do(ctx context.Context) *resty.Request {
 	debug := cast.ToBool(os.Getenv("HTTP_REQUEST_DEBUG"))
 	trace := cast.ToBool(os.Getenv("HTTP_REQUEST_TRACE"))
 
-	r := engine.R().
+	r := engine.SetRetryCount(1).
+		AddRetryCondition(func(r *resty.Response, err error) bool {
+			// 只重试连接重置。
+			return errors.Is(err, syscall.ECONNRESET)
+		}).
+		R().
 		SetContext(ctx).
 		SetDebug(debug).
 		SetLogger(CreateRestryLog(ctx))
