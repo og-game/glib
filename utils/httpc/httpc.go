@@ -3,7 +3,12 @@ package httpc
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"syscall"
+	"time"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cast"
@@ -19,18 +24,18 @@ var once sync.Once
 
 func Do(ctx context.Context) *resty.Request {
 	once.Do(func() {
-		engine = MustClient()
+		engine = MustClient().
+			SetRetryCount(1).
+			AddRetryCondition(func(_ *resty.Response, err error) bool {
+				return errors.Is(err, syscall.ECONNRESET)
+			}).
+			AddRetryHook(logRetryOutcome)
 	})
 
 	debug := cast.ToBool(os.Getenv("HTTP_REQUEST_DEBUG"))
 	trace := cast.ToBool(os.Getenv("HTTP_REQUEST_TRACE"))
 
-	r := engine.SetRetryCount(1).
-		AddRetryCondition(func(r *resty.Response, err error) bool {
-			// 只重试连接重置。
-			return errors.Is(err, syscall.ECONNRESET)
-		}).
-		R().
+	r := engine.R().
 		SetContext(ctx).
 		SetDebug(debug).
 		SetLogger(CreateRestryLog(ctx))
@@ -52,7 +57,10 @@ func New(ctx context.Context, fs ...func(cli *resty.Client)) *resty.Request {
 
 // MustClient new http client
 func MustClient() *resty.Client {
-	return resty.New()
+	client := resty.New()
+	transport := client.GetClient().Transport.(*http.Transport)
+	transport.IdleConnTimeout = 60 * time.Second
+	return client
 }
 
 type RestyLog struct {
@@ -73,4 +81,43 @@ func (l RestyLog) Warnf(format string, v ...interface{}) {
 
 func (l RestyLog) Debugf(format string, v ...interface{}) {
 	l.Logger.Infof(format, v...)
+}
+
+// logRetryOutcome records errors selected by the retry conditions. Resty calls
+// retry hooks even when no retries remain, so this does not imply another send.
+func logRetryOutcome(resp *resty.Response, err error) {
+	ctx := context.Background()
+	fields := []logx.LogField{
+		logx.Field("error_type", fmt.Sprintf("%T", err)),
+		logx.Field("is_reset", errors.Is(err, syscall.ECONNRESET)),
+		logx.Field("retry_condition_matched", true),
+	}
+	if resp != nil && resp.Request != nil {
+		req := resp.Request
+		ctx = req.Context()
+		fields = append(fields, logx.Field("attempt", req.Attempt),
+			logx.Field("callback_request_id", req.Header.Get("X-Request-ID")),
+			logx.Field("method", req.Method))
+		if target, parseErr := url.Parse(req.URL); parseErr == nil {
+			fields = append(fields, logx.Field("host", target.Host), logx.Field("path", target.EscapedPath()))
+		}
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		fields = append(fields, logx.Field("net_op", opErr.Op), logx.Field("net_network", opErr.Net))
+		if opErr.Source != nil {
+			fields = append(fields, logx.Field("net_source", opErr.Source.String()))
+		}
+		if opErr.Addr != nil {
+			fields = append(fields, logx.Field("net_addr", opErr.Addr.String()))
+		}
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		err = urlErr.Err
+	}
+	if err != nil {
+		fields = append(fields, logx.Field("error", err.Error()))
+	}
+	logx.WithContext(ctx).Errorw("http retry condition matched", fields...)
 }
